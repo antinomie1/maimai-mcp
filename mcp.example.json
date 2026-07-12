@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "maimai": {
+      "command": "python",
+      "args": ["-m", "maimai_mcp"],
+      "cwd": "C:\\path\\to\\maimai-mcp",
+      "env": {
+        "PYTHONPATH": "C:\\path\\to\\maimai-mcp"
+      }
+    }
+  }
+}

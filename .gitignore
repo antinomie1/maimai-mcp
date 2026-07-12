@@ -1,0 +1,43 @@
+# Secrets & local config
+.env
+.env.*
+!.env.example
+maimai_mcp/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg
+
+# Runtime / generated
+logs/
+output/
+*.png
+!docs/**/*.png
+static/
+maimai_mcp/logs/
+temp_pie.html
+
+# IDE / OS
+.idea/
+.vscode/
+.cursor/
+*.swp
+.DS_Store
+Thumbs.db
+node_modules/
+
+# Local MCP overrides (keep example)
+mcp.json
+!.mcp.json
+!mcp.example.json

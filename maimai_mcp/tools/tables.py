@@ -1,0 +1,199 @@
+"""Table / progress tools."""
+
+from __future__ import annotations
+
+from mcp.server.fastmcp import FastMCP
+
+from maimai_mcp.features.global_chart.draw import draw_global_chart
+from maimai_mcp.features.global_chart.query import query_global_chart
+from maimai_mcp.features.level_progress.draw import draw_level_progress
+from maimai_mcp.features.level_progress.query import query_level_progress
+from maimai_mcp.features.level_score_list.draw import draw_level_score_list
+from maimai_mcp.features.level_score_list.query import query_level_score_list
+from maimai_mcp.features.plate_table.draw import draw_plate_progress, draw_plate_table
+from maimai_mcp.features.plate_table.query import query_plate
+from maimai_mcp.features.rating_table.draw import (
+    draw_rating_table_progress,
+    draw_rating_table_text,
+)
+from maimai_mcp.features.rating_table.query import query_rating_table
+from maimai_mcp.result import FeatureResult
+
+from ..formatters import result_to_json
+from ..runtime import ensure_ready, run_fr
+from ..schemas import (
+    GinfoInput,
+    LevelProgressInput,
+    PlateInput,
+    RatingTableInput,
+    ScoreListInput,
+)
+
+
+async def plate_impl(params: PlateInput) -> FeatureResult:
+    await ensure_ready()
+    user, play_result, ver, version_name, plan = await query_plate(
+        params.ver, params.plan, params.qq, username=params.username
+    )
+    kwargs = dict(
+        service=user.service,
+        play_result=play_result,
+        plan=plan,
+        version=ver,
+        version_name=version_name,
+        page=params.page,
+        out=params.out,
+    )
+    if params.mode == "progress":
+        return draw_plate_progress(**kwargs)
+    return draw_plate_table(**kwargs)
+
+
+def register(mcp: FastMCP) -> None:
+    @mcp.tool(
+        name="maimai_ginfo",
+        annotations={
+            "title": "Global chart stats",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+    )
+    async def maimai_ginfo(params: GinfoInput) -> str:
+        """Global play stats + pie chart for a difficulty (ginfo)."""
+
+        async def _go():
+            await ensure_ready()
+            song_key = params.song.strip()
+            level_index = params.diff
+            if level_index is None:
+                if song_key and song_key[0] in "绿黄红紫白":
+                    level_index = "绿黄红紫白".index(song_key[0])
+                    song_key = song_key[1:].strip()
+                else:
+                    level_index = 3
+            song, li, text = await query_global_chart(song_key, level_index)
+            if params.format == "json" and not params.out:
+                return FeatureResult.success(
+                    text=text, data={"song_id": song.song_id, "level_index": li}
+                )
+            return await draw_global_chart(song, li, text, out=params.out)
+
+        return result_to_json(
+            await run_fr(_go()), include_image_b64=params.include_image_b64
+        )
+
+    @mcp.tool(
+        name="maimai_rating_table",
+        annotations={
+            "title": "Level rating table",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def maimai_rating_table(params: RatingTableInput) -> str:
+        """Level constant table; progress=true draws personal completion."""
+
+        async def _go():
+            await ensure_ready()
+            rating, user, play_result, with_p = await query_rating_table(
+                params.level,
+                qq=params.qq,
+                username=params.username,
+                with_progress=params.progress or params.plan,
+            )
+            if with_p and user and play_result is not None:
+                return draw_rating_table_progress(
+                    rating,
+                    user.service,
+                    play_result,
+                    plan=params.plan,
+                    out=params.out,
+                )
+            return draw_rating_table_text(rating, out=params.out)
+
+        return result_to_json(
+            await run_fr(_go()), include_image_b64=params.include_image_b64
+        )
+
+    @mcp.tool(
+        name="maimai_plate",
+        annotations={
+            "title": "Plate completion / progress",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def maimai_plate(params: PlateInput) -> str:
+        """Plate table or progress (e.g. ver=祝 plan=将 mode=progress)."""
+        return result_to_json(
+            await run_fr(plate_impl(params)),
+            include_image_b64=params.include_image_b64,
+        )
+
+    @mcp.tool(
+        name="maimai_level_progress",
+        annotations={
+            "title": "Level achievement progress",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def maimai_level_progress(params: LevelProgressInput) -> str:
+        """Progress for a level + plan (e.g. level=14 plan=ap)."""
+
+        async def _go():
+            await ensure_ready()
+            user, level, plan, cat, page, c, u, n = await query_level_progress(
+                params.level,
+                params.plan,
+                qq=params.qq,
+                username=params.username,
+                category=params.category,
+                page=params.page,
+            )
+            return draw_level_progress(
+                user, level, plan, cat, page, c, u, n, out=params.out
+            )
+
+        return result_to_json(
+            await run_fr(_go()), include_image_b64=params.include_image_b64
+        )
+
+    @mcp.tool(
+        name="maimai_score_list",
+        annotations={
+            "title": "Score list by level/constant",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def maimai_score_list(params: ScoreListInput) -> str:
+        """Personal score list for a level or constant (e.g. 14.0)."""
+
+        async def _go():
+            await ensure_ready()
+            user, rating, page, results = await query_level_score_list(
+                params.rating,
+                qq=params.qq,
+                username=params.username,
+                page=params.page,
+            )
+            if params.format == "json" and not params.out:
+                return FeatureResult.success(data=results)
+            return draw_level_score_list(
+                user, rating, page, results, out=params.out
+            )
+
+        return result_to_json(
+            await run_fr(_go()), include_image_b64=params.include_image_b64
+        )

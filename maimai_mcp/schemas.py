@@ -1,0 +1,195 @@
+"""Shared Pydantic inputs for maimai MCP tools."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class StrictModel(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        validate_assignment=True,
+        extra="forbid",
+    )
+
+
+class PlayerArgs(StrictModel):
+    """Player identity: QQ and/or Diving-Fish username (session defaults fill gaps)."""
+
+    qq: int | None = Field(
+        default=None,
+        description="QQ number. Falls back to session default / DEFAULT_QQ.",
+        ge=1,
+    )
+    username: str | None = Field(
+        default=None,
+        description="Diving-Fish prober username. Falls back to session / DEFAULT_USERNAME.",
+        max_length=64,
+    )
+
+
+class ImageOutArgs(StrictModel):
+    format: Literal["text", "json", "image"] = Field(
+        default="image",
+        description="Prefer image for draw tools; json for structured data only.",
+    )
+    include_image_b64: bool = Field(
+        default=False,
+        description="If true, embed PNG as base64 (large). Default returns image_path only.",
+    )
+    out: str | None = Field(
+        default=None,
+        description="Optional output PNG path or directory.",
+        max_length=512,
+    )
+
+
+class IdentityInput(StrictModel):
+    qq: int | None = Field(default=None, ge=1)
+    username: str | None = Field(default=None, max_length=64)
+
+
+class B50Input(PlayerArgs, ImageOutArgs):
+    all_perfect: bool = Field(
+        default=False,
+        description="AP50 (Lxns only; requires bound QQ, not username-only).",
+    )
+
+
+class SongKeyInput(PlayerArgs, ImageOutArgs):
+    song: str = Field(
+        ...,
+        description="Song id, title, or alias (e.g. '834', 'PANDORA').",
+        min_length=1,
+        max_length=128,
+    )
+
+
+class SearchInput(PlayerArgs, ImageOutArgs):
+    query: str = Field(..., min_length=1, max_length=128, description="Search text")
+    mode: Literal["标题", "定数", "bpm", "曲师", "谱师"] = Field(
+        default="标题",
+        description="Search mode: title / level_value / bpm / artist / charter",
+    )
+    page: int = Field(default=1, ge=1, le=100)
+
+
+class ChartInput(PlayerArgs, ImageOutArgs):
+    song: str = Field(..., min_length=1, max_length=128, description="Song id/title/alias")
+
+
+class ScoreLineInput(StrictModel):
+    diff: Literal["绿", "黄", "红", "紫", "白"] = Field(
+        ..., description="Difficulty color label"
+    )
+    song_id: int = Field(..., ge=1, description="Song ID")
+    line: float = Field(..., gt=0, lt=101, description="Target achievement line e.g. 100")
+
+
+class RiseInput(PlayerArgs, ImageOutArgs):
+    level: str | None = Field(default=None, description="Optional level filter e.g. 14+")
+    score: int | None = Field(default=None, ge=1, description="Target rating gain")
+
+
+class PlateInput(PlayerArgs, ImageOutArgs):
+    ver: str = Field(..., description="Plate version char e.g. 祝")
+    plan: str = Field(..., description="Plan e.g. 将/极/神/舞舞/者")
+    mode: Literal["table", "progress"] = Field(default="progress")
+    page: int = Field(default=1, ge=1)
+
+
+class RatingTableInput(PlayerArgs, ImageOutArgs):
+    level: str = Field(..., description="Level e.g. 13 or 13+")
+    progress: bool = Field(default=False, description="Include personal completion")
+    plan: bool = Field(default=False, description="FC/AP plan table")
+
+
+class LevelProgressInput(PlayerArgs, ImageOutArgs):
+    level: str = Field(...)
+    plan: str = Field(..., description="e.g. ap, sss+, fdx+")
+    category: str | None = Field(default=None, description="已完成/未完成/未游玩")
+    page: int = Field(default=1, ge=1)
+
+
+class ScoreListInput(PlayerArgs, ImageOutArgs):
+    rating: str = Field(..., description="Level 14 or constant 14.0")
+    page: int = Field(default=1, ge=1)
+
+
+class GinfoInput(ImageOutArgs):
+    song: str = Field(..., description="Optional color prefix 绿黄红紫白 + song")
+    diff: int | None = Field(default=None, ge=0, le=4, description="Difficulty index 0-4")
+
+
+class RankingInput(PlayerArgs):
+    name: str = Field(default="", description="Prober username to find rank")
+    page: int = Field(default=1, ge=1)
+    my: bool = Field(default=False, description="Look up self via QQ b50 username")
+
+
+class RandomInput(PlayerArgs, ImageOutArgs):
+    level: str = Field(...)
+    chart_type: Literal["dx", "sd", "标准"] | None = None
+    color: str | None = Field(default=None, description="绿黄红紫白")
+
+
+class MaiWhatInput(PlayerArgs, ImageOutArgs):
+    rise: bool = Field(default=False, description="Bias toward rating push charts")
+
+
+class FortuneInput(PlayerArgs, ImageOutArgs):
+    pass
+
+
+class AliasQueryInput(StrictModel):
+    name: str = Field(..., min_length=1)
+    by_id: bool = Field(default=False)
+
+
+class AliasAddInput(StrictModel):
+    song_id: int = Field(..., ge=1)
+    alias: str = Field(..., min_length=1, max_length=64)
+
+
+class UpdateInput(StrictModel):
+    what: list[Literal["music", "alias", "tables", "all"]] = Field(
+        default_factory=lambda: ["all"],
+        description="What to refresh from network / regenerate",
+    )
+
+
+class ThemeInput(StrictModel):
+    value: str = Field(..., description="circle / prism_plus / 0 / 1")
+    qq: int | None = Field(default=None, ge=1)
+
+
+class SourceInput(StrictModel):
+    value: str = Field(..., description="水鱼/落雪 or 0/1")
+    qq: int | None = Field(default=None, ge=1)
+
+
+class BindInput(StrictModel):
+    qq: int | None = Field(default=None, ge=1)
+    code: str | None = Field(
+        default=None,
+        description="Lxns OAuth code XXXX-XXXX-XXXX; omit to get authorize URL",
+    )
+
+
+class LookupSongInput(PlayerArgs, ImageOutArgs):
+    query: str = Field(..., min_length=1, description="Title/alias/id to resolve")
+    with_minfo: bool = Field(
+        default=False,
+        description="If true and identity set, also fetch personal play data",
+    )
+
+
+class PlayerOverviewInput(PlayerArgs, ImageOutArgs):
+    with_rise: bool = Field(default=True, description="Include rise recommendations")
+
+
+class PushPlanInput(PlayerArgs, ImageOutArgs):
+    level: str | None = None
+    score: int | None = Field(default=None, ge=1)
