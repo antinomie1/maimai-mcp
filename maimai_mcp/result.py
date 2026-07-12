@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,7 @@ class FeatureResult:
       - ``code`` is a stable machine-readable error id when failed
       - ``data`` holds structured payload (JSON-serializable via ``to_dict``)
       - ``image_path`` is the preferred image output; ``image_b64`` is optional
+      - ``draw_seconds`` is image generation wall time in seconds when applicable
     """
 
     text: str | None = None
@@ -51,6 +53,7 @@ class FeatureResult:
     image_b64: str | None = None
     error: str | None = None
     code: str | None = None
+    draw_seconds: float | None = None
     extras: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -65,6 +68,7 @@ class FeatureResult:
         data: Any = None,
         image_path: Path | str | None = None,
         image_b64: str | None = None,
+        draw_seconds: float | None = None,
         **extras: Any,
     ) -> FeatureResult:
         path = Path(image_path) if image_path is not None else None
@@ -73,6 +77,7 @@ class FeatureResult:
             data=data,
             image_path=path,
             image_b64=image_b64,
+            draw_seconds=draw_seconds,
             extras=extras or {},
         )
 
@@ -83,9 +88,16 @@ class FeatureResult:
         *,
         code: str = "error",
         data: Any = None,
+        draw_seconds: float | None = None,
         **extras: Any,
     ) -> FeatureResult:
-        return cls(error=message, code=code, data=data, extras=extras or {})
+        return cls(
+            error=message,
+            code=code,
+            data=data,
+            draw_seconds=draw_seconds,
+            extras=extras or {},
+        )
 
     def raise_if_error(self) -> FeatureResult:
         if self.error:
@@ -103,6 +115,7 @@ class FeatureResult:
             "image_b64": self.image_b64,
             "error": self.error,
             "code": self.code,
+            "draw_seconds": self.draw_seconds,
             "extras": _serialize(self.extras),
         }
 
@@ -121,6 +134,37 @@ class FeatureResult:
                 print(self.text)
             if self.image_path:
                 print(f"[image] {self.image_path}")
+            if self.draw_seconds is not None:
+                print(f"[draw] {self.draw_seconds:.3f}s")
             if fmt == "text" and not self.text and not self.image_path and self.data is not None:
                 print(self.to_json())
         return 0
+
+
+def image_result(
+    image: Any,
+    path: Path | str,
+    *,
+    text: str | None = None,
+    data: Any = None,
+    image_b64: str | None = None,
+    t0: float | None = None,
+    **extras: Any,
+) -> FeatureResult:
+    """Save *image* to *path* and return a FeatureResult with optional draw timing.
+
+    Pass ``t0 = time.perf_counter()`` taken before drawing so wall-clock generation
+    time (draw + save) is recorded in ``draw_seconds``.
+    """
+    from .core.io_image import save_image
+
+    saved = save_image(image, path)
+    elapsed = round(time.perf_counter() - t0, 3) if t0 is not None else None
+    return FeatureResult(
+        text=text,
+        data=data,
+        image_path=saved,
+        image_b64=image_b64,
+        draw_seconds=elapsed,
+        extras=extras or {},
+    )

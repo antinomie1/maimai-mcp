@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from ...core.image.song import song_list
-from ...core.io_image import default_out_path, save_image
+from ...core.io_image import default_out_path
 from ...core.merge.models import Song
-from ...result import FeatureResult
+from ...result import FeatureResult, image_result
 from ..chart_info.draw import draw_chart_info
 from ..chart_info.query import query_chart_info
 
@@ -31,6 +32,6 @@ async def draw_search_result(
         lines = [f"{'「' + str(s.song_id) + '」':<7} {s.song_name}" for s in songs]
         return FeatureResult(text="\n".join(lines))
     path = default_out_path(f"search_p{page}", out)
+    t0 = time.perf_counter()
     image = song_list(songs, page)
-    saved = save_image(image, path)
-    return FeatureResult(text=f"共 {len(songs)} 首", image_path=saved)
+    return image_result(image, path, text=f"共 {len(songs)} 首", t0=t0)

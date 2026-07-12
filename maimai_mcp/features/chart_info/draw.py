@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from ...core.image.chart import song_chart_banquet_info, song_chart_info
-from ...core.io_image import default_out_path, save_image
+from ...core.io_image import default_out_path
 from ...core.merge.models import Song
-from ...result import FeatureResult
+from ...result import FeatureResult, image_result
 
 
 def draw_chart_info(
@@ -17,6 +18,7 @@ def draw_chart_info(
     out: Path | str | None = None,
 ) -> FeatureResult:
     path = default_out_path(f"chart_{song.song_id}", out)
+    t0 = time.perf_counter()
     if ctx.get("banquet"):
         image = song_chart_banquet_info(song)
     else:
@@ -27,8 +29,9 @@ def draw_chart_info(
             ctx["best_list"],
             ctx["theme"],
         )
-    saved = save_image(image, path)
-    return FeatureResult(
+    return image_result(
+        image,
+        path,
         text=f"ID.{song.song_id} {song.song_name}",
-        image_path=saved,
+        t0=t0,
     )

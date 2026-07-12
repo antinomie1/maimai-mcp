@@ -37,6 +37,7 @@ def merge_results(*parts: FeatureResult | dict[str, Any], text: str | None = Non
     images: list[str] = []
     data: dict[str, Any] = {}
     texts: list[str] = []
+    draw_seconds: float | None = None
     if text:
         texts.append(text)
     for i, p in enumerate(parts):
@@ -47,6 +48,12 @@ def merge_results(*parts: FeatureResult | dict[str, Any], text: str | None = Non
                 texts.append(p.text)
             if p.image_path:
                 images.append(str(p.image_path))
+            if p.draw_seconds is not None:
+                draw_seconds = (
+                    p.draw_seconds
+                    if draw_seconds is None
+                    else round(draw_seconds + p.draw_seconds, 3)
+                )
             if p.data is not None:
                 data[f"part_{i}"] = _serialize(p.data)
         else:
@@ -55,5 +62,6 @@ def merge_results(*parts: FeatureResult | dict[str, Any], text: str | None = Non
         text="\n".join(texts) if texts else None,
         data={**data, "image_paths": images},
         image_path=Path(images[0]) if images else None,
+        draw_seconds=draw_seconds,
     )
     return result_to_json(fr)

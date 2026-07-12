@@ -86,6 +86,7 @@ async def lookup_song_impl(params: LookupSongInput) -> FeatureResult:
             text=chart_fr.text,
             data=data,
             image_path=chart_fr.image_path,
+            draw_seconds=chart_fr.draw_seconds,
         )
     return chart_fr
 
@@ -119,6 +120,7 @@ async def player_overview_impl(params: PlayerOverviewInput) -> FeatureResult:
             "rise": rise_fr.data if rise_fr.ok else {"error": rise_fr.error},
         },
         image_path=b50_fr.image_path,
+        draw_seconds=b50_fr.draw_seconds,
     )
 
 
@@ -165,6 +167,7 @@ async def push_plan_impl(params: PushPlanInput) -> FeatureResult:
             "chart": chart_fr.data if chart_fr and chart_fr.ok else None,
         },
         image_path=chart_fr.image_path if chart_fr and chart_fr.ok else None,
+        draw_seconds=chart_fr.draw_seconds if chart_fr and chart_fr.ok else None,
     )
 
 

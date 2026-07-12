@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from ...core.database.qq import User
+from ...core.domain import get_rows
 from ...core.image.score import DrawScore
 from ...core.image.tools import tricolor_gradient_prism_plus
-from ...core.io_image import default_out_path, save_image
+from ...core.io_image import default_out_path
 from ...core.merge.models import Category, NotPlayedResult, PlayedResult
-from ...core.domain import get_rows
-from ...result import FeatureResult
+from ...result import FeatureResult, image_result
 
 
 def draw_level_progress(
@@ -26,6 +27,7 @@ def draw_level_progress(
     out: Path | str | None = None,
 ) -> FeatureResult:
     path = default_out_path(f"level_prog_{level}_{plan}_{category}_{page}", out)
+    t0 = time.perf_counter()
 
     def get_played_rows(count: int) -> int:
         return max(4, get_rows(count, 5))
@@ -63,7 +65,9 @@ def draw_level_progress(
         ds = DrawScore(user.service, background_bg)
         image = ds.draw_category(category, notplayed)
 
-    return FeatureResult(
+    return image_result(
+        image,
+        path,
         text=f"{level} {plan} 进度",
-        image_path=save_image(image, path),
+        t0=t0,
     )
