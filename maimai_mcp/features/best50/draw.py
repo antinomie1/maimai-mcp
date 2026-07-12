@@ -21,15 +21,17 @@ async def draw_best50(
     out: Path | str | None = None,
 ) -> FeatureResult:
     path = default_out_path(f"b50_{user.qqid}", out)
+    # Time the full pipeline: canvas setup + card draw + PNG save.
+    # Previously t0 started after PlayerBest50() and draw() returned base64,
+    # so setup was omitted and save_image re-decoded/re-encoded PNG (double work).
+    t0 = time.perf_counter()
     b50 = PlayerBest50(
         user, player=player, best50=best50, is_username=is_username
     )
-    t0 = time.perf_counter()
-    image_b64 = await b50.draw()
+    image = await b50.draw()
     return image_result(
-        image_b64,
+        image,
         path,
         text="可使用 user_settings 更换主题/数据源。",
-        image_b64=image_b64 if isinstance(image_b64, str) else None,
         t0=t0,
     )

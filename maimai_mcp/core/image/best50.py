@@ -11,7 +11,6 @@ from ..clients.lxns.models.collection import Collection
 from ..database.qq import User
 from ..merge.models import Best50, Player, ServiceName, Theme
 from .base import ScoreBaseImage
-from .tools import image_to_base64
 
 
 class PlayerBest50(ScoreBaseImage):
@@ -99,12 +98,12 @@ class PlayerBest50(ScoreBaseImage):
             return static / "mai" / type / file
         return await online_assets(f"/{type}/{file}")
 
-    async def draw(self) -> str:
+    async def draw(self) -> Image.Image:
         """
         绘制Best50
 
         Returns:
-            `base64 str`
+            `Image.Image` 完整 B50 图（RGBA）
         """
         logo = Image.open(self.logo).resize((249, 120))
         name = Image.open(pic_dir / "Name.png")
@@ -209,7 +208,12 @@ class PlayerBest50(ScoreBaseImage):
             (255, 255, 255, 255),
         )
 
-        self.whiledraw(self.best50.sd, False)
-        self.whiledraw(self.best50.dx, True)
+        # B35 + B15 as one thread-pool batch (coordinates unchanged).
+        self.whiledraw_sections(
+            [
+                (self.best50.sd, False, 0),
+                (self.best50.dx, True, 0),
+            ]
+        )
 
-        return image_to_base64(self._im)
+        return self._im

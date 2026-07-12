@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+import os
+from concurrent.futures import ThreadPoolExecutor
+
 from PIL import Image, ImageDraw
 
 from ...constants import COMBO_MAP, RANK_MAP, SYNC_MAP
@@ -7,6 +12,8 @@ from ..service import mai
 from ..utils.calc import dx_score
 from .assets import AssetsImage
 from .tools import DrawText, song_chart
+
+_DRAW_WORKERS = max(2, min(8, (os.cpu_count() or 4)))
 
 
 def get_char_width(o: int) -> int:
@@ -93,97 +100,148 @@ class ScoreBaseImage(AssetsImage):
         self._title_lengthen_bg = self._themed_image(theme, "title_lengthen.png")
 
     def whiledraw(self, data: list[PlayedResult], dx: bool = False, list_y: int = 0):
+        """Draw score cards. Cards are rendered in a thread pool then composited."""
+        self.whiledraw_sections([(data, dx, list_y)])
+
+    def whiledraw_sections(
+        self,
+        sections: list[tuple[list[PlayedResult], bool, int]],
+    ) -> None:
+        """Draw multiple score grids (e.g. B35 + B15) with one parallel batch."""
         gap = 114
         dx_step = 276
         start_x = 16
 
-        if list_y == 0:
-            initial_y = 1085 if dx else 235
-        else:
-            initial_y = list_y
-        for num, info in enumerate(data):
-            row, col = divmod(num, 5)
-            x = start_x + col * dx_step
-            y = initial_y + row * gap
+        # (card_job, paste_xy)
+        prepared: list[
+            tuple[
+                tuple[PlayedResult, float, int, Image.Image, Image.Image | None],
+                tuple[int, int],
+            ]
+        ] = []
 
-            cover = Image.open(song_chart(info.song_id)).resize((75, 75))
-            type_ = Image.open(pic_dir / f"{info.type.upper()}.png").resize((37, 14))
-            if info.rate.islower():
-                rate = Image.open(
-                    pic_dir
-                    / self.theme.value
-                    / f"UI_TTR_Rank_{RANK_MAP[info.rate]}.png"
-                ).resize((63, 28))
+        for data, dx, list_y in sections:
+            if not data:
+                continue
+            if list_y == 0:
+                initial_y = 1085 if dx else 235
             else:
-                rate = Image.open(
-                    pic_dir / self.theme.value / f"UI_TTR_Rank_{info.rate}.png"
-                ).resize((63, 28))
+                initial_y = list_y
 
-            self._im.alpha_composite(self._diff_bg[info.level_index], (x, y))
-            self._im.alpha_composite(cover, (x + 12, y + 12))
-            self._im.alpha_composite(type_, (x + 51, y + 91))
-            self._im.alpha_composite(rate, (x + 92, y + 78))
-            if info.fc:
-                fc = Image.open(
-                    pic_dir / f"UI_MSS_MBase_Icon_{COMBO_MAP[info.fc]}.png"
-                ).resize((34, 34))
-                self._im.alpha_composite(fc, (x + 154, y + 77))
-            if info.fs:
-                fs = Image.open(
-                    pic_dir / f"UI_MSS_MBase_Icon_{SYNC_MAP[info.fs]}.png"
-                ).resize((34, 34))
-                self._im.alpha_composite(fs, (x + 185, y + 77))
-
-            song = mai.total_list.by_id(info.song_id)
-            dxscore = song.difficulties[info.level_index].dx_score
-            if (dx_star := dx_score(info.dx_score / dxscore * 100)) != 0:
-                self._im.alpha_composite(
-                    self._dx_star_bg[dx_star - 1].resize((47, 26)), (x + 217, y + 80)
+            # Resolve music metadata on the main thread (shared song tables).
+            for num, info in enumerate(data):
+                row, col = divmod(num, 5)
+                x = start_x + col * dx_step
+                y = initial_y + row * gap
+                li = int(info.level_index)
+                song = mai.total_list.by_id(info.song_id)
+                dxscore = song.difficulties[info.level_index].dx_score
+                ds = mai.total_level_value_map[
+                    f"{info.song_id}-{info.level_index.value}"
+                ]
+                dx_star_im = None
+                if dxscore and (star := dx_score(info.dx_score / dxscore * 100)) != 0:
+                    dx_star_im = self._dx_star_bg[star - 1]
+                prepared.append(
+                    ((info, ds, dxscore, self._diff_bg[li], dx_star_im), (x, y))
                 )
 
-            self._tb.draw(
-                x + 26,
-                y + 98,
-                13,
-                info.song_id,
-                self._id_text_color[info.level_index],
-                anchor="mm",
+        if not prepared:
+            return
+
+        theme = self.theme
+        id_colors = self._id_text_color
+        diff_colors = self._diff_text_color
+
+        def _render(
+            job: tuple[PlayedResult, float, int, Image.Image, Image.Image | None],
+        ) -> Image.Image:
+            info, ds, dxscore, diff_bg, dx_star_im = job
+            return _render_score_card(
+                info,
+                ds=ds,
+                dxscore=dxscore,
+                theme=theme,
+                diff_bg=diff_bg,
+                dx_star_im=dx_star_im,
+                id_text_color=id_colors[int(info.level_index)],
+                diff_text_color=diff_colors[int(info.level_index)],
             )
 
-            title = info.song_name
-            if coloum_width(title) > 18:
-                title = change_column_width(title, 17) + "..."
-            self._sy.draw(
-                x + 93,
-                y + 14,
-                14,
-                title,
-                self._diff_text_color[info.level_index],
-                anchor="lm",
-            )
-            self._tb.draw(
-                x + 93,
-                y + 38,
-                30,
-                f"{info.achievements:.4f}%",
-                self._diff_text_color[info.level_index],
-                anchor="lm",
-            )
-            self._tb.draw(
-                x + 219,
-                y + 65,
-                15,
-                f"{info.dx_score}/{dxscore}",
-                self._diff_text_color[info.level_index],
-                anchor="mm",
-            )
+        jobs = [item[0] for item in prepared]
+        if len(jobs) == 1:
+            tiles = [_render(jobs[0])]
+        else:
+            workers = min(_DRAW_WORKERS, len(jobs))
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                tiles = list(pool.map(_render, jobs))
 
-            ds = mai.total_level_value_map[f"{info.song_id}-{info.level_index.value}"]
-            self._tb.draw(
-                x + 93,
-                y + 65,
-                15,
-                f"{ds} -> {info.rating}",
-                self._diff_text_color[info.level_index],
-                anchor="lm",
-            )
+        for tile, (_job, (x, y)) in zip(tiles, prepared):
+            self._im.alpha_composite(tile, (x, y))
+
+
+def _rate_icon_name(rate) -> str:
+    """Map PlayedResult.rate to the UI rank icon stem."""
+    if rate is None:
+        return "D"
+    text = str(rate)
+    # str Enum may stringify as "RateType.SSSP" in some cases; prefer .value.
+    value = getattr(rate, "value", text)
+    if isinstance(value, str) and value.islower():
+        return RANK_MAP.get(value, value.upper())
+    return str(value)
+
+
+def _render_score_card(
+    info: PlayedResult,
+    *,
+    ds: float,
+    dxscore: int,
+    theme: Theme,
+    diff_bg: Image.Image,
+    dx_star_im: Image.Image | None,
+    id_text_color: tuple[int, int, int, int],
+    diff_text_color: tuple[int, int, int, int],
+) -> Image.Image:
+    """Render one b50-style score card. Safe to call from worker threads."""
+    card = diff_bg.copy()
+    draw = ImageDraw.Draw(card)
+    sy = DrawText(draw, SIYUAN)
+    tb = DrawText(draw, TBFONT)
+
+    cover = Image.open(song_chart(info.song_id)).convert("RGBA").resize((75, 75))
+    type_ = Image.open(pic_dir / f"{info.type.upper()}.png").convert("RGBA").resize(
+        (37, 14)
+    )
+    rate = Image.open(
+        pic_dir / theme.value / f"UI_TTR_Rank_{_rate_icon_name(info.rate)}.png"
+    ).convert("RGBA").resize((63, 28))
+
+    card.alpha_composite(cover, (12, 12))
+    card.alpha_composite(type_, (51, 91))
+    card.alpha_composite(rate, (92, 78))
+
+    if info.fc:
+        fc = Image.open(
+            pic_dir / f"UI_MSS_MBase_Icon_{COMBO_MAP[info.fc]}.png"
+        ).convert("RGBA").resize((34, 34))
+        card.alpha_composite(fc, (154, 77))
+    if info.fs:
+        fs = Image.open(
+            pic_dir / f"UI_MSS_MBase_Icon_{SYNC_MAP[info.fs]}.png"
+        ).convert("RGBA").resize((34, 34))
+        card.alpha_composite(fs, (185, 77))
+
+    if dx_star_im is not None:
+        card.alpha_composite(dx_star_im.resize((47, 26)), (217, 80))
+
+    tb.draw(26, 98, 13, info.song_id, id_text_color, anchor="mm")
+
+    title = info.song_name
+    if coloum_width(title) > 18:
+        title = change_column_width(title, 17) + "..."
+    sy.draw(93, 14, 14, title, diff_text_color, anchor="lm")
+    tb.draw(93, 38, 30, f"{info.achievements:.4f}%", diff_text_color, anchor="lm")
+    tb.draw(219, 65, 15, f"{info.dx_score}/{dxscore}", diff_text_color, anchor="mm")
+    tb.draw(93, 65, 15, f"{ds} -> {info.rating}", diff_text_color, anchor="lm")
+    return card

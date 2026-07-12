@@ -7,7 +7,6 @@ from ..image.base import DrawText
 from ..merge.models import NotPlayedResult, PlayedResult, ServiceName, Song, Theme
 from ..utils.calc import dx_score
 from .base import change_column_width, coloum_width, song_chart
-from .tools import image_to_base64
 
 
 def song_play_data(
@@ -16,7 +15,7 @@ def song_play_data(
     *,
     song: Song,
     play_result: list[NotPlayedResult | PlayedResult],
-) -> str:
+) -> Image.Image:
     """
     谱面游玩
 
@@ -24,7 +23,7 @@ def song_play_data(
         `qqid`: qqid
         `song_id`: 曲目ID
     Returns:
-        `base64 str`
+        `Image.Image`
     """
     if theme == Theme.CIRCLE:
         color = (249, 62, 172, 255)
@@ -139,4 +138,4 @@ def song_play_data(
         3,
         (255, 255, 255, 255),
     )
-    return image_to_base64(im)
+    return im

@@ -11,7 +11,6 @@ from ..utils.calc import compute_rating
 from .base import change_column_width, coloum_width
 from .tools import (
     DrawText,
-    image_to_base64,
     song_chart,
 )
 
@@ -123,7 +122,7 @@ def new_best_score(
 
 def song_chart_info(
     song: Song, calc: bool, is_full: bool, best_list: list[PlayedResult], theme: Theme
-) -> str:
+) -> Image.Image:
     """
     绘制谱面信息
 
@@ -132,7 +131,7 @@ def song_chart_info(
         `qqid`: qqid
         `user`: 用户模型
     Returns:
-        `base64 str`
+        `Image.Image`
     """
     im = Image.open(pic_dir / theme.value / "chart_info.png").convert("RGBA")
     dr = ImageDraw.Draw(im)
@@ -246,17 +245,17 @@ def song_chart_info(
         3,
         (255, 255, 255, 255),
     )
-    return image_to_base64(im)
+    return im
 
 
-def song_chart_banquet_info(song: Song) -> str:
+def song_chart_banquet_info(song: Song) -> Image.Image:
     """
     绘制宴会场谱面信息
 
     Params:
         `song`: 曲目模型
     Returns:
-        `base64 str`
+        `Image.Image`
     """
 
     im = Image.open(pic_dir / "chart_info_enkaijou.png")
@@ -367,4 +366,4 @@ def song_chart_banquet_info(song: Song) -> str:
         (255, 255, 255, 255),
     )
 
-    return image_to_base64(im)
+    return im

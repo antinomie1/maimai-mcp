@@ -78,7 +78,10 @@ class AssetsImage:
 
     def __init__(self) -> None:
         """静态资源类"""
-        if not maiconfig.save_in_memory:
+        # Always ensure sprites are available for drawing.
+        # When SAVE_IN_MEMORY is True, bootstrap normally preloads once;
+        # lazy-load here if that was skipped (e.g. older MCP ensure_ready).
+        if not maiconfig.save_in_memory or not self._images_loaded:
             self._load_image()
 
     @staticmethod

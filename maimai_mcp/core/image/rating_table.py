@@ -23,7 +23,6 @@ from ..utils.calc import compute_rating
 from .assets import AssetsImage
 from .tools import (
     DrawText,
-    image_to_base64,
 )
 
 PlayedResultMap = defaultdict[int, dict[int, RatingTableResult]]
@@ -150,12 +149,12 @@ class DrawRatingTable(AssetsImage):
 
         return statistics, played_map
 
-    def draw(self) -> str:
+    def draw(self) -> Image.Image:
         """
         绘制定数表
 
         Returns:
-            `base64 str`
+            `Image.Image`
         """
         im = Image.open(rating_table_dir / f"{self.rating}.png").convert("RGBA")
         dr = ImageDraw.Draw(im)
@@ -176,7 +175,7 @@ class DrawRatingTable(AssetsImage):
                 8,
                 (255, 255, 255, 255),
             )
-            return image_to_base64(im)
+            return im
 
         fot.draw(
             495, 160, 70, "Level.", self._font_color, "ld", 8, (255, 255, 255, 255)
@@ -311,4 +310,4 @@ class DrawRatingTable(AssetsImage):
         final_im = im.resize(
             (int(im.size[0] * 0.8), int(im.size[1] * 0.8)), Image.Resampling.LANCZOS
         )
-        return image_to_base64(final_im)
+        return final_im

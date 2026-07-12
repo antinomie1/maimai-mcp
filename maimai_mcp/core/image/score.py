@@ -12,7 +12,7 @@ from ..merge.models import (
     Theme,
 )
 from .base import ScoreBaseImage, change_column_width, coloum_width
-from .tools import image_to_base64, song_chart
+from .tools import song_chart
 
 
 class DrawScore(ScoreBaseImage):
@@ -134,7 +134,7 @@ class DrawScore(ScoreBaseImage):
         dx: list[RiseResult],
         dx_score: int,
         total_height: int,
-    ) -> str:
+    ) -> Image.Image:
         """
         绘制上分数据表
 
@@ -144,7 +144,7 @@ class DrawScore(ScoreBaseImage):
             `sd`: `新版本谱面`
             `dx_score`: `新版本最低分`
         Returns:
-            `base64 str`
+            `Image.Image`
         """
         title_bg = self._title_bg.copy().resize((273, 80))
         self._im.alpha_composite(title_bg, (314, 30))
@@ -173,7 +173,7 @@ class DrawScore(ScoreBaseImage):
             2,
             (255, 255, 255, 255),
         )
-        return image_to_base64(self._im.crop((200, 0, 1200, total_height)))
+        return self._im.crop((200, 0, 1200, total_height))
 
     def draw_plan(
         self,
@@ -185,7 +185,7 @@ class DrawScore(ScoreBaseImage):
         notstarted: list[NotPlayedResult],
         plan: str,
         completed_len: int,
-    ) -> str:
+    ) -> Image.Image:
         """
         绘制进度表
 
@@ -198,7 +198,7 @@ class DrawScore(ScoreBaseImage):
             `plan`: `目标`
             `completed_len`: `已完成谱面数量`
         Returns:
-            `base64 str`
+            `Image.Image`
         """
         max = len(completed + unfinished + notstarted)
 
@@ -277,7 +277,7 @@ class DrawScore(ScoreBaseImage):
             2,
             (255, 255, 255, 255),
         )
-        return image_to_base64(self._im)
+        return self._im
 
     def draw_category(
         self,
@@ -285,7 +285,7 @@ class DrawScore(ScoreBaseImage):
         data: list[PlayedResult] | list[NotPlayedResult],
         page: int = 1,
         end_page: int = 1,
-    ) -> str:
+    ) -> Image.Image:
         """
         绘制指定进度表
 
@@ -295,7 +295,7 @@ class DrawScore(ScoreBaseImage):
             `page`: `页数`
             `end_page`: `总页数`
         Returns:
-            `base64 str`
+            `Image.Image`
         """
         lendata = len(data)
         newdata = data[(page - 1) * 80 : page * 80]
@@ -336,7 +336,7 @@ class DrawScore(ScoreBaseImage):
                 self._default_text_color,
                 "mm",
             )
-        return image_to_base64(self._im)
+        return self._im
 
     def draw_score_list(
         self,
@@ -344,7 +344,7 @@ class DrawScore(ScoreBaseImage):
         play_result: list[PlayedResult],
         page: int,
         end_page: int,
-    ) -> str:
+    ) -> Image.Image:
         """
         绘制分数列表
 
@@ -354,7 +354,7 @@ class DrawScore(ScoreBaseImage):
             `page`: `页数`
             `end_page`: `总页数`
         Returns:
-            `base64 str`
+            `Image.Image`
         """
         start_offset = (page - 1) * 80
         current_page_result = play_result[start_offset : page * 80]
@@ -401,4 +401,4 @@ class DrawScore(ScoreBaseImage):
             2,
             (255, 255, 255, 255),
         )
-        return image_to_base64(self._im)
+        return self._im

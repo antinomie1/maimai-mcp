@@ -19,7 +19,6 @@ from .assets import AssetsImage
 from .tools import (
     DrawText,
     generate_frosted_card,
-    image_to_base64,
     song_chart,
     tricolor_gradient_prism_plus,
 )
@@ -343,7 +342,7 @@ class DrawPlateTable(PlateTable):
         path = pic_dir / f"{cfg['prefix']}{icon_name}.png"
         return self._open_image(path).resize((60, 60))
 
-    def draw(self) -> str:
+    def draw(self) -> Image.Image:
         """绘制牌子完成表。"""
         data = self.process()
         im = Image.open(plate_table_dir / f"{self.plate_name}.png")
@@ -473,7 +472,7 @@ class DrawPlateTable(PlateTable):
                 (255, 255, 255, 255),
             )
 
-        return image_to_base64(im)
+        return im
 
 
 class DrawPlateProgress(PlateTable):
@@ -502,7 +501,7 @@ class DrawPlateProgress(PlateTable):
         im.alpha_composite(self._separator_bg, (100, separator_height))
         return im
 
-    def draw(self) -> str:
+    def draw(self) -> Image.Image:
         """绘制牌子进度表。"""
         data = self.process()
         results = {
@@ -652,4 +651,4 @@ class DrawPlateProgress(PlateTable):
             "mm",
         )
 
-        return image_to_base64(im)
+        return im

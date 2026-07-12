@@ -8,7 +8,6 @@ from .base import change_column_width, coloum_width
 from .tools import (
     DrawText,
     generate_frosted_card,
-    image_to_base64,
     song_chart,
     tricolor_gradient_prism_plus,
 )
@@ -16,7 +15,7 @@ from .tools import (
 PAGE_SIZE = 14
 
 
-def song_list(songs: list[Song], page: int) -> str:
+def song_list(songs: list[Song], page: int) -> Image.Image:
     """
     绘制曲目列表
 
@@ -24,7 +23,7 @@ def song_list(songs: list[Song], page: int) -> str:
         `songs`: 曲目列表
         `page`: 页数
     Returns:
-        `base64 str`
+        `Image.Image`
     """
     assets = AssetsImage()
     total_page = max(1, (len(songs) + PAGE_SIZE - 1) // PAGE_SIZE)
@@ -155,4 +154,4 @@ def song_list(songs: list[Song], page: int) -> str:
         3,
         (255, 255, 255, 255),
     )
-    return image_to_base64(im)
+    return im

@@ -12,10 +12,9 @@ from .schemas import PlayerArgs
 
 
 async def ensure_ready(*, load_music: bool = True) -> None:
-    if session.bootstrapped and (not load_music or True):
-        # still call bootstrap — it no-ops if already loaded
-        pass
-    await bootstrap(load_music=load_music, quiet=True, preload_assets=False)
+    # preload_assets=None respects SAVE_IN_MEMORY (default True).
+    # Do not force False — drawing tools need _diff_bg etc. loaded.
+    await bootstrap(load_music=load_music, quiet=True, preload_assets=None)
     session.bootstrapped = True
 
 

@@ -30,6 +30,12 @@ async def bootstrap(
     """
     global _bootstrapped, _warned_config
     if _bootstrapped and (not load_music or mai.loaded):
+        # Prior boot may have skipped asset preload; finish it if needed.
+        do_preload = (
+            maiconfig.save_in_memory if preload_assets is None else preload_assets
+        )
+        if do_preload and not AssetsImage._images_loaded:
+            AssetsImage._load_image()
         return
 
     await create_database()

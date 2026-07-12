@@ -24,7 +24,7 @@ from ..merge.models import PlayedResult, RatingTableResult, ServiceName, Song, T
 from ..service import mai
 from ..utils.calc import compute_rating
 from .base import ScoreBaseImage
-from .tools import DrawText, image_to_base64
+from .tools import DrawText
 
 PlayedResultMap = defaultdict[int, dict[int, RatingTableResult]]
 PlateResultMap = dict[str, dict[int, list[PlayedResult | None]]]
@@ -175,7 +175,7 @@ class DrawRatingTable:
 
         return statistics, played_map
 
-    def draw(self) -> str:
+    def draw(self) -> Image.Image:
         """
         绘制定数表
         """
@@ -191,7 +191,7 @@ class DrawRatingTable:
             fot.draw(
                 750, 220, 100, self.rating, font_color, "ld", 8, (255, 255, 255, 255)
             )
-            return image_to_base64(im)
+            return im
 
         fot.draw(495, 160, 70, "Level.", font_color, "ld", 8, (255, 255, 255, 255))
         fot.draw(750, 160, 100, self.rating, font_color, "ld", 8, (255, 255, 255, 255))
@@ -290,7 +290,7 @@ class DrawRatingTable:
         final_im = im.resize(
             (int(im.size[0] * 0.8), int(im.size[1] * 0.8)), Image.Resampling.LANCZOS
         )
-        return image_to_base64(final_im)
+        return final_im
 
 
 class DrawPlateTable:
@@ -479,7 +479,7 @@ class DrawPlateTable:
 
         return len(wu_id_list), len(wu_re_id_set), played_map
 
-    def draw(self) -> str:
+    def draw(self) -> Image.Image:
         """
         绘制完成表
         """
@@ -669,4 +669,4 @@ class DrawPlateTable:
                 (255, 255, 255, 255),
             )
 
-        return image_to_base64(im)
+        return im
