@@ -107,6 +107,10 @@ class FeatureResult:
         return self
 
     def to_dict(self) -> dict[str, Any]:
+        # Surface timing both as a number and a short label for clients/agents.
+        draw_time = (
+            f"{self.draw_seconds:.3f}s" if self.draw_seconds is not None else None
+        )
         return {
             "ok": self.ok,
             "text": self.text,
@@ -116,6 +120,7 @@ class FeatureResult:
             "error": self.error,
             "code": self.code,
             "draw_seconds": self.draw_seconds,
+            "draw_time": draw_time,
             "extras": _serialize(self.extras),
         }
 
@@ -141,6 +146,16 @@ class FeatureResult:
         return 0
 
 
+def _format_draw_text(text: str | None, draw_seconds: float | None) -> str | None:
+    """Append generation timing to human-readable text so clients always surface it."""
+    if draw_seconds is None:
+        return text
+    note = f"生成耗时 {draw_seconds:.3f}s"
+    if text:
+        return f"{text}\n{note}"
+    return note
+
+
 def image_result(
     image: Any,
     path: Path | str,
@@ -151,17 +166,17 @@ def image_result(
     t0: float | None = None,
     **extras: Any,
 ) -> FeatureResult:
-    """Save *image* to *path* and return a FeatureResult with optional draw timing.
+    """Save *image* to *path* and return a FeatureResult with draw timing.
 
     Pass ``t0 = time.perf_counter()`` taken before drawing so wall-clock generation
-    time (draw + save) is recorded in ``draw_seconds``.
+    time (draw + save) is recorded in ``draw_seconds`` and appended to ``text``.
     """
     from .core.io_image import save_image
 
     saved = save_image(image, path)
     elapsed = round(time.perf_counter() - t0, 3) if t0 is not None else None
     return FeatureResult(
-        text=text,
+        text=_format_draw_text(text, elapsed),
         data=data,
         image_path=saved,
         image_b64=image_b64,
