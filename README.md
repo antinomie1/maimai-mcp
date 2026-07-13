@@ -1,6 +1,6 @@
 # maimai-mcp
 
-本地可用的舞萌 DX **查询库 / CLI / MCP 服务**：查曲、查分、进度与绘图，供命令行或 Agent（如 AstrBot）调用。
+本地可用的舞萌 DX **查询库 / CLI / MCP 服务**：查曲、查分、进度与绘图，供命令行或任意 Agent / 宿主调用。
 
 - 仓库：https://github.com/antinomie1/maimai-mcp  
 - 绘图与业务参考：[Yuri-YuzuChaN/maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX)  
@@ -29,7 +29,7 @@ maimai_mcp/           主包（业务 + CLI + MCP）
   core/               客户端、领域逻辑、绘图、QQ 身份缓存只读
   features/           功能拆分（query / draw）
   tools/              MCP 工具注册
-docs/                 AstrBot / Agent 提示词等
+docs/                 Agent 通用规则等
 scripts/              Inspector、冒烟脚本
 static/               曲库 JSON、字体、封面等资源（自备）
 output/               默认出图目录
@@ -221,7 +221,7 @@ python scripts/smoke_mcp_tools.py --username <水鱼用户名>
 4. 聊天前缀 `昵称/<用户QQ>`、会话 `...:<用户QQ>_<群号>` 中：  
    **前者是用户 QQ，后者后半段是群号。**
 
-完整提示词片段见：**[docs/ASTRBOT_AGENT_PROMPT.md](docs/ASTRBOT_AGENT_PROMPT.md)**（请粘贴到 AstrBot / Agent 系统提示）。
+通用 Agent 规则（含「用户回复禁止输出 QQ/群号」）：**[docs/AGENT.md](docs/AGENT.md)**。可整段写入系统提示。
 
 ### 可选：QQ 身份缓存
 
@@ -244,13 +244,12 @@ python -m maimai_mcp.cli update music
 python -m maimai_mcp.cli update tables
 ```
 
-## AstrBot 部署提示
+## Agent / 宿主集成
 
-1. 配置 MCP 指向本仓库 `python -m maimai_mcp`。  
-2. 系统提示加入 [docs/ASTRBOT_AGENT_PROMPT.md](docs/ASTRBOT_AGENT_PROMPT.md)。  
-3. 宿主插件钩子（如 `QQToolsPlugin`）须与当前 AstrBot 签名一致，否则会出现  
-   `takes N positional arguments but M were given`。  
-4. 更稳妥：在 `on_llm_request` 注入 `sender_id` / `group_id`，或由插件调用 `maimai_set_identity`，不要让模型从自然语言猜号。
+1. 配置 MCP：`python -m maimai_mcp`（见上文配置示例）。  
+2. 将 [docs/AGENT.md](docs/AGENT.md) 纳入系统提示或 Agent 说明。  
+3. **用户可见文本不得出现 QQ 号 / 群号**；身份数字仅作工具参数。  
+4. 更稳妥：宿主在请求前写入玩家身份（或调用 `maimai_set_identity`），避免模型猜号。
 
 ## 数据源说明
 
