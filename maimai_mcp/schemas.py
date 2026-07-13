@@ -82,6 +82,24 @@ class GetQqIdentityInput(StrictModel):
     group_id: int | None = Field(default=None, ge=1)
 
 
+class RefreshIdentityInput(StrictModel):
+    base_url: str | None = Field(
+        default=None,
+        max_length=256,
+        description="Override NAPCAT_BASE_URL / ONEBOT_BASE_URL for this call",
+    )
+    no_cache: bool = Field(
+        default=True, description="Pass no_cache to get_group_member_list"
+    )
+    timeout_ms: int = Field(default=10000, ge=1000, le=120000)
+    group_delay_ms: int | None = Field(
+        default=None, ge=0, le=10000, description="Delay between groups; default env"
+    )
+    max_groups: int | None = Field(
+        default=None, ge=1, le=500, description="Limit groups (testing)"
+    )
+
+
 class B50Input(PlayerArgs, ImageOutArgs):
     all_perfect: bool = Field(
         default=False,

@@ -14,7 +14,7 @@
 | 进度 | 牌子完成表、定数表、等级进度、上分推荐 |
 | 其它 | 排名、今日运势、曲目全服统计（ginfo） |
 | 会话 | `maimai_set_identity`（玩家 QQ + 群号分离）、session 粘性 |
-| 身份缓存 | 可选只读 `identity_cache.json`，昵称反查 QQ |
+| 身份缓存 | 经 **NapCat** HTTP API 拉取好友/群成员 → `identity_cache.json`，昵称反查 QQ |
 
 默认主题 **circle**；需要 `prism_plus` 时再切换。  
 **水鱼**为主路径；**落雪**可选（需 Token / OAuth 绑定）。
@@ -26,7 +26,7 @@
 
 ```text
 maimai_mcp/           主包（业务 + CLI + MCP）
-  core/               客户端、领域逻辑、绘图、QQ 身份缓存只读
+  core/               客户端、领域逻辑、绘图、QQ 身份缓存（NapCat 拉取）
   features/           功能拆分（query / draw）
   tools/              MCP 工具注册
 docs/                 Agent 通用规则等
@@ -81,7 +81,10 @@ python -m maimai_mcp.cli update tables
 | `DEFAULT_QQ` | 否 | — | 未传 QQ 时的默认玩家 QQ |
 | `DEFAULT_USERNAME` | 否 | — | 默认水鱼用户名 |
 | `OUTPUT_DIR` | 否 | 仓库 `output/` | 出图默认目录 |
-| `QQ_IDENTITY_CACHE_DIR` | 否 | `./qq-identity-cache` | 可选身份缓存目录（内含 `identity_cache.json`） |
+| `QQ_IDENTITY_CACHE_DIR` | 否 | `./qq-identity-cache` | 身份缓存目录（`identity_cache.json`） |
+| `NAPCAT_BASE_URL` | 刷新身份缓存时需要 | — | NapCat HTTP 地址，如 `http://127.0.0.1:3000`（也可用 `ONEBOT_BASE_URL`） |
+| `NAPCAT_ACCESS_TOKEN` | 否 | — | NapCat HTTP 鉴权 Token（也可用 `ONEBOT_ACCESS_TOKEN`） |
+| `QQ_IDENTITY_GROUP_DELAY_MS` | 否 | `250` | 拉群成员时的组间间隔（毫秒） |
 
 ### 水鱼 Diving-Fish
 
@@ -106,6 +109,8 @@ python -m maimai_mcp.cli update tables
 MAIMAIDX_PATH=C:\path\to\maimai-mcp\static
 DIVINGFISH_TOKEN=你的水鱼Token
 OUTPUT_DIR=C:\path\to\maimai-mcp\output
+# 需要身份缓存（昵称反查 / 防群号当 QQ）时：
+# NAPCAT_BASE_URL=http://127.0.0.1:3000
 ```
 
 ## CLI
@@ -172,7 +177,9 @@ python scripts/smoke_mcp_tools.py --username <水鱼用户名>
 | **会话 / 身份** | |
 | `maimai_set_identity` | 设置本进程 `qq`、`username`、**`group_id`（仅上下文，不作查分 QQ）** |
 | `maimai_get_session` | 查看 session（含 `group_id`） |
-| `maimai_resolve_qq` | 昵称/群名片反查 QQ（需身份缓存） |
+| `maimai_refresh_identity` | 经 **NapCat** 拉取好友/群/成员并写入身份缓存 |
+| `maimai_identity_status` | 身份缓存路径与统计 |
+| `maimai_resolve_qq` | 昵称/群名片反查 QQ（依赖缓存） |
 | `maimai_get_qq_identity` | 按 QQ 读缓存中的昵称信息 |
 | **用户设置** | |
 | `maimai_user_show` | 主题 / 数据源 |
@@ -223,16 +230,59 @@ python scripts/smoke_mcp_tools.py --username <水鱼用户名>
 
 通用 Agent 规则（含「用户回复禁止输出 QQ/群号」）：**[docs/AGENT.md](docs/AGENT.md)**。可整段写入系统提示。
 
-### 可选：QQ 身份缓存
+### QQ 身份缓存（NapCat 主动拉取）
 
-本仓库 **不**主动拉取好友/群成员。若本机已有 `identity_cache.json`（结构含 `users` / `groups`）：
+依赖已启动的 **[NapCat](https://github.com/NapNeko/NapCatQQ)**（或其它兼容 OneBot 11 HTTP 的实现），用于：
 
-```bash
-# 指向含 identity_cache.json 的目录
-export QQ_IDENTITY_CACHE_DIR=/path/to/qq-identity-cache
+- 拉取机器人**好友列表**、**所在群**、**各群成员**（QQ / 昵称 / 群名片）
+- 写入本地 `identity_cache.json`
+- 供 `maimai_resolve_qq` 按昵称反查，并减少「把群号当成玩家 QQ」的误用
+
+#### 1. NapCat 侧
+
+1. 安装并登录 [NapCat](https://github.com/NapNeko/NapCatQQ)。  
+2. 开启 **HTTP 服务**（端口自行配置，下文示例 `3000`）。  
+3. 若启用了 Token 鉴权，记下 access token。  
+4. 确认本机可访问：`http://127.0.0.1:3000`（或 Docker 内网地址，如 `http://napcat:3000`）。
+
+#### 2. maimai-mcp 配置
+
+```env
+# 推荐直接用 NapCat 变量名
+NAPCAT_BASE_URL=http://127.0.0.1:3000
+# NAPCAT_ACCESS_TOKEN=你的token
+
+# 等价写法（二选一即可）
+# ONEBOT_BASE_URL=http://127.0.0.1:3000
+# ONEBOT_ACCESS_TOKEN=
+
+# 可选：缓存目录（默认仓库下 qq-identity-cache/）
+# QQ_IDENTITY_CACHE_DIR=C:\path\to\qq-identity-cache
+# QQ_IDENTITY_GROUP_DELAY_MS=250
 ```
 
-即可使用 `maimai_resolve_qq` / `maimai_get_qq_identity`，并加强「群号误当 QQ」检测。
+MCP 客户端 `env` 示例：
+
+```json
+"NAPCAT_BASE_URL": "http://127.0.0.1:3000",
+"NAPCAT_ACCESS_TOKEN": ""
+```
+
+#### 3. 刷新与使用
+
+```text
+maimai_refresh_identity
+  → NapCat: get_friend_list / get_group_list / get_group_member_list
+  → 写入 identity_cache.json
+
+maimai_identity_status    # 查看统计
+maimai_resolve_qq         # 昵称 / 群名片 → 玩家 QQ（给工具参数用）
+maimai_get_qq_identity    # 按 QQ 读缓存昵称
+```
+
+`maimai_refresh_identity` 可选参数：`timeout_ms`、`group_delay_ms`、`max_groups`（测试用）、`base_url`（临时覆盖地址）。
+
+群很多时拉取会较久，属正常现象。对用户回复仍 **不要念出 QQ/群号**（见 [docs/AGENT.md](docs/AGENT.md)）。
 
 ### 曲库与孤儿成绩
 
@@ -258,6 +308,7 @@ python -m maimai_mcp.cli update tables
 | Diving-Fish 水鱼 | 默认成绩、曲库、排名 |
 | Lxns 落雪 | 可选成绩源、曲库合并、OAuth |
 | Yuzu 柚子 | 别名 |
+| NapCat | 身份缓存：好友/群/群成员 HTTP 拉取 |
 
 本地用户偏好（主题、数据源、落雪 token）存在 `static/data/user.db`。
 
@@ -267,6 +318,8 @@ python -m maimai_mcp.cli update tables
 - [Diving-Fish 查分器](https://www.diving-fish.com/maimaidx/prober/)  
 - [落雪查分器](https://maimai.lxns.net/)  
 - [柚子别名](https://www.yuzuchan.moe/)  
+- [NapCat](https://github.com/NapNeko/NapCatQQ) — 身份缓存数据源（HTTP）  
+
 
 ## License
 

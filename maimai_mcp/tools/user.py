@@ -11,7 +11,13 @@ from maimai_mcp.core.database.qq import update_user
 from maimai_mcp.core.domain import bind_lxns
 from maimai_mcp.core.errors import ValidationError
 from maimai_mcp.core.merge.models import ServiceName, Theme
-from maimai_mcp.core.qq_identity_store import get_identity, resolve_identities
+from maimai_mcp.core.qq_identity_store import (
+    IdentityRefreshError,
+    cache_status,
+    get_identity,
+    refresh_identity_cache,
+    resolve_identities,
+)
 from maimai_mcp.core.user import resolve_user
 from maimai_mcp.result import FeatureResult
 
@@ -23,6 +29,7 @@ from ..schemas import (
     GetQqIdentityInput,
     IdentityInput,
     PlayerArgs,
+    RefreshIdentityInput,
     ResolveQqInput,
     SourceInput,
     ThemeInput,
@@ -80,6 +87,66 @@ def register(mcp: FastMCP) -> None:
         return result_to_json(FeatureResult.success(data=session.snapshot()))
 
     @mcp.tool(
+        name="maimai_refresh_identity",
+        annotations={
+            "title": "Refresh QQ identity cache via OneBot",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        },
+    )
+    async def maimai_refresh_identity(params: RefreshIdentityInput) -> str:
+        """Pull friend list, groups, and group members via NapCat HTTP API.
+
+        Requires NAPCAT_BASE_URL (or ONEBOT_BASE_URL). Writes identity_cache.json.
+        """
+
+        async def _go():
+            try:
+                status = await refresh_identity_cache(
+                    base_url=params.base_url,
+                    no_cache=params.no_cache,
+                    timeout_ms=params.timeout_ms,
+                    group_delay_ms=params.group_delay_ms,
+                    max_groups=params.max_groups,
+                )
+            except IdentityRefreshError as e:
+                return FeatureResult.failure(e.message, code=e.code)
+            stats = status.get("stats") or {}
+            text = (
+                "身份缓存已刷新："
+                f"好友 {stats.get('friendCount', 0)}，"
+                f"群 {stats.get('groupCount', 0)}，"
+                f"唯一用户 {stats.get('uniqueUsers', 0)}"
+            )
+            return FeatureResult.success(text=text, data=status)
+
+        return result_to_json(await run_fr(_go()))
+
+    @mcp.tool(
+        name="maimai_identity_status",
+        annotations={
+            "title": "Identity cache status",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+    )
+    async def maimai_identity_status() -> str:
+        """Show identity cache path, stats, and configured NapCat base URL."""
+        status = cache_status()
+        stats = status.get("stats") or {}
+        text = (
+            f"缓存={'有' if status.get('cacheExists') else '无'}，"
+            f"好友 {stats.get('friendCount', 0)}，"
+            f"群 {stats.get('groupCount', 0)}，"
+            f"用户 {stats.get('uniqueUsers', 0)}"
+        )
+        return result_to_json(FeatureResult.success(text=text, data=status))
+
+    @mcp.tool(
         name="maimai_resolve_qq",
         annotations={
             "title": "Resolve QQ from nickname cache",
@@ -90,9 +157,9 @@ def register(mcp: FastMCP) -> None:
         },
     )
     async def maimai_resolve_qq(params: ResolveQqInput) -> str:
-        """Lookup player QQ via optional identity_cache.json.
+        """Lookup player QQ from identity cache (nickname / card / waterfish name).
 
-        Needs QQ_IDENTITY_CACHE_DIR or ./qq-identity-cache with identity_cache.json.
+        Run maimai_refresh_identity first if cache is empty.
         """
         data = resolve_identities(
             params.query,
@@ -104,7 +171,7 @@ def register(mcp: FastMCP) -> None:
             f"找到 {n} 个候选"
             + ("（重名请让用户确认）" if data.get("ambiguous") else "")
             if n
-            else f"缓存中未找到：{params.query}"
+            else "缓存中未找到匹配（可先 maimai_refresh_identity）"
         )
         return result_to_json(FeatureResult.success(text=text, data=data))
 
@@ -127,13 +194,14 @@ def register(mcp: FastMCP) -> None:
         if not ident:
             return result_to_json(
                 FeatureResult.success(
-                    text=f"QQ {params.qq} 不在身份缓存中",
-                    data={"qq": params.qq, "identity": None},
+                    text="该用户不在身份缓存中（可先刷新缓存）",
+                    data={"identity": None},
                 )
             )
+        nick = ident.get("qqNickname") or ident.get("friendNickname") or ""
         return result_to_json(
             FeatureResult.success(
-                text=f"QQ={ident.get('qq')} nick={ident.get('qqNickname')}",
+                text=f"缓存命中 nick={nick}" if nick else "缓存命中",
                 data=ident,
             )
         )

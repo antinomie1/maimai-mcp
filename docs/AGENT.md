@@ -48,6 +48,8 @@ maimai_set_identity
 | 需求 | 工具 |
 |------|------|
 | 会话身份 | `maimai_set_identity` / `maimai_get_session` |
+| 刷新身份缓存（好友/群） | `maimai_refresh_identity`（需 `NAPCAT_BASE_URL`） |
+| 身份缓存状态 / 反查 | `maimai_identity_status` / `maimai_resolve_qq` |
 | B50 | `maimai_b50` |
 | 等级/定数分数列表 | `maimai_score_list` |
 | 牌子完成/进度 | `maimai_plate` |
