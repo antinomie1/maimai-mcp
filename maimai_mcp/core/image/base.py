@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from PIL import Image, ImageDraw
 
+from ...config import log
 from ...constants import COMBO_MAP, RANK_MAP, SYNC_MAP
 from ...resources import FOTNEWRODIN, SIYUAN, TBFONT, pic_dir
 from ..merge.models import PlayedResult, Theme
@@ -135,10 +136,18 @@ class ScoreBaseImage(AssetsImage):
                 y = initial_y + row * gap
                 li = int(info.level_index)
                 song = mai.total_list.by_id(info.song_id)
-                dxscore = song.difficulties[info.level_index].dx_score
-                ds = mai.total_level_value_map[
-                    f"{info.song_id}-{info.level_index.value}"
-                ]
+                if song is None:
+                    log.warning(
+                        f"曲库缺少曲目 {info.song_id}（{info.song_name}），跳过绘制"
+                    )
+                    continue
+                dxscore = mai.dx_score_of(info.song_id, li) or 0
+                ds = mai.resolve_level_value(info.song_id, li)
+                if ds is None:
+                    ds = float(info.level_value or 0)
+                    log.warning(
+                        f"曲库缺少谱面 {info.song_id}-{li}，使用成绩自带定数 {ds}"
+                    )
                 dx_star_im = None
                 if dxscore and (star := dx_score(info.dx_score / dxscore * 100)) != 0:
                     dx_star_im = self._dx_star_bg[star - 1]

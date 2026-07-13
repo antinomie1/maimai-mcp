@@ -37,7 +37,8 @@ temp_pie.html
 Thumbs.db
 node_modules/
 
-# Local MCP overrides (keep example)
+# Local MCP overrides / IDE tool cache (keep example)
 mcp.json
+mcps/
 !.mcp.json
 !mcp.example.json

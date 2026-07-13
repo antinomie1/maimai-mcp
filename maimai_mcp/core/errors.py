@@ -109,6 +109,13 @@ def exception_to_message(exc: BaseException) -> str:
         return str(exc) or "权限不足。"
     if isinstance(exc, ValueError) and str(exc):
         return str(exc)
+    if isinstance(exc, KeyError):
+        key = exc.args[0] if exc.args else "?"
+        log.error(f"发生错误: {traceback.format_exc()}")
+        return (
+            f"曲库缺少谱面数据（{key}）。"
+            "请执行 maimai_update_catalog 更新曲库；若仍失败请反馈该 key。"
+        )
     log.error(f"发生错误: {traceback.format_exc()}")
     return f"发生未知错误：{type(exc).__name__}"
 

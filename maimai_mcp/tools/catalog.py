@@ -16,7 +16,7 @@ from maimai_mcp.result import FeatureResult
 
 from ..context import session
 from ..formatters import result_to_json
-from ..runtime import ensure_ready, run_fr
+from ..runtime import ensure_ready, run_fr, with_session_player
 from ..schemas import (
     AliasAddInput,
     AliasQueryInput,
@@ -30,6 +30,7 @@ from ..schemas import (
 
 async def search_impl(params: SearchInput) -> FeatureResult:
     await ensure_ready()
+    params = with_session_player(params)
     mode = None if params.mode == "标题" else params.mode
     songs, page = await query_search(params.query, mode=mode, page=params.page)
     session.last_song_ids = [s.song_id for s in songs[:50]]
@@ -48,6 +49,7 @@ async def search_impl(params: SearchInput) -> FeatureResult:
 
 async def chart_impl(params: ChartInput) -> FeatureResult:
     await ensure_ready()
+    params = with_session_player(params)
     song, ctx, _ = await query_chart_info(
         params.song, params.qq, username=params.username
     )
@@ -143,14 +145,15 @@ def register(mcp: FastMCP) -> None:
                 chart_type=params.chart_type,
                 color=params.color,
             )
+            p = with_session_player(params)
             return await chart_impl(
                 ChartInput(
                     song=str(song.song_id),
-                    qq=params.qq,
-                    username=params.username,
-                    format=params.format,
-                    out=params.out,
-                    include_image_b64=params.include_image_b64,
+                    qq=p.qq,
+                    username=p.username,
+                    format=p.format,
+                    out=p.out,
+                    include_image_b64=p.include_image_b64,
                 )
             )
 

@@ -6,7 +6,12 @@ from .play_result import lxns_format_result
 
 
 def lxns_play_list(score: list[Score]) -> list[PlayedResult]:
-    return [lxns_format_result(v) for v in score]
+    out: list[PlayedResult] = []
+    for v in score:
+        result = lxns_format_result(v)
+        if result is not None:
+            out.append(result)
+    return out
 
 
 def lxns_to_best50(best50: b50) -> Best50:

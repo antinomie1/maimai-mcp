@@ -2,48 +2,40 @@
 
 from __future__ import annotations
 
+from typing import TypeVar
+
 from maimai_mcp.bootstrap import bootstrap
-from maimai_mcp.core.errors import as_result
-from maimai_mcp.core.user import PlayerRef, resolve_player
+from maimai_mcp.core.errors import ValidationError, as_result
+from maimai_mcp.core.qq_identity_store import looks_like_group_id
 from maimai_mcp.result import FeatureResult
 
-from .context import session
+from .context import GROUP_AS_QQ_MSG, session
 from .schemas import PlayerArgs
+
+TPlayer = TypeVar("TPlayer", bound=PlayerArgs)
 
 
 async def ensure_ready(*, load_music: bool = True) -> None:
-    # preload_assets=None respects SAVE_IN_MEMORY (default True).
-    # Do not force False — drawing tools need _diff_bg etc. loaded.
     await bootstrap(load_music=load_music, quiet=True, preload_assets=None)
     session.bootstrapped = True
 
 
-def effective_player_args(args: PlayerArgs | None = None) -> tuple[int | None, str | None]:
-    qq = args.qq if args and args.qq is not None else session.default_qq
+def with_session_player(args: TPlayer) -> TPlayer:
+    """Fill qq/username from session; sticky-update when explicit; block group-as-qq."""
+    if args.qq is not None:
+        session.assert_player_qq(args.qq)
+        if looks_like_group_id(args.qq):
+            raise ValidationError(GROUP_AS_QQ_MSG)
+        session.default_qq = args.qq
+    if args.username is not None:
+        session.default_username = args.username.strip() or None
+
+    qq = args.qq if args.qq is not None else session.default_qq
     username = (
-        args.username
-        if args and args.username is not None
-        else session.default_username
+        args.username if args.username is not None else session.default_username
     )
-    return qq, username
-
-
-async def resolve_from_args(
-    args: PlayerArgs | None = None,
-    *,
-    require_lxns_auth: bool = False,
-    optional: bool = False,
-) -> PlayerRef | None:
-    qq, username = effective_player_args(args)
-    ref = await resolve_player(
-        qq,
-        username,
-        require_lxns_auth=require_lxns_auth and not (username or "").strip(),
-        optional=optional,
-    )
-    if ref is not None:
-        session.last_player_label = ref.label
-    return ref
+    session.assert_player_qq(qq)
+    return args.model_copy(update={"qq": qq, "username": username})
 
 
 async def run_fr(coro) -> FeatureResult:

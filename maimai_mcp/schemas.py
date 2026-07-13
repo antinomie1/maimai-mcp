@@ -20,12 +20,16 @@ class PlayerArgs(StrictModel):
 
     qq: int | None = Field(
         default=None,
-        description="QQ number. Falls back to session default / DEFAULT_QQ.",
+        description=(
+            "Player QQ (sender or target). NEVER put group id here. "
+            "Falls back to session after maimai_set_identity / prior tool with qq. "
+            "Chat context is NOT auto-injected."
+        ),
         ge=1,
     )
     username: str | None = Field(
         default=None,
-        description="Diving-Fish prober username. Falls back to session / DEFAULT_USERNAME.",
+        description="Diving-Fish username if no QQ. Prefer qq for Lxns.",
         max_length=64,
     )
 
@@ -47,8 +51,35 @@ class ImageOutArgs(StrictModel):
 
 
 class IdentityInput(StrictModel):
-    qq: int | None = Field(default=None, ge=1)
+    qq: int | None = Field(
+        default=None,
+        ge=1,
+        description="Player QQ (sender or query target). Not group id.",
+    )
     username: str | None = Field(default=None, max_length=64)
+    group_id: int | None = Field(
+        default=None,
+        ge=1,
+        description="Current group id for context only; never used as player qq.",
+    )
+
+
+class ResolveQqInput(StrictModel):
+    query: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="QQ number, QQ nickname, group card, or waterfish name",
+    )
+    group_id: int | None = Field(
+        default=None, ge=1, description="Prefer matching within this group"
+    )
+    max_results: int = Field(default=10, ge=1, le=20)
+
+
+class GetQqIdentityInput(StrictModel):
+    qq: int = Field(..., ge=1, description="Player QQ")
+    group_id: int | None = Field(default=None, ge=1)
 
 
 class B50Input(PlayerArgs, ImageOutArgs):

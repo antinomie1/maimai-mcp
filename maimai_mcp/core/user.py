@@ -57,8 +57,8 @@ async def resolve_user(
     qqid = qq if qq is not None else maiconfig.default_qq
     if qqid is None:
         raise ValidationError(
-            "未指定 QQ，请传入 --qq 或在 .env 中配置 DEFAULT_QQ"
-            "（也可使用 --username 水鱼用户名查询）"
+            "未指定玩家 QQ。请传 qq（发送者/被查对象，不是群号），"
+            "或先 maimai_set_identity，或配置 DEFAULT_QQ；也可用 username。"
         )
 
     try:

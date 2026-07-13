@@ -80,7 +80,6 @@ async def merge_music_data(
     合并 `lxns` 和 `diving-fish` 曲目数据
     """
     song_map: defaultdict[int, Song] = defaultdict(Song)
-    level_value_map: defaultdict[str, float] = defaultdict(float)
 
     if diving_fish_list is None and lxns_list is None:
         raise ValueError
@@ -113,7 +112,6 @@ async def merge_music_data(
                     stats=None,
                 )
                 song.difficulties.append(difficulties)
-                level_value_map[f"{song_id}-{n}"] = ds
 
             song_map[song_id] = song
 
@@ -224,7 +222,15 @@ async def merge_music_data(
                     diff.stats = s
                     break
 
-    result = MusicList(root=song_map.values())
+    result = MusicList(root=list(song_map.values()))
+    # Rebuild from final song list so Lxns-only / appended charts are included.
+    # Use a plain dict (not defaultdict) so missing keys fail consistently and
+    # callers can skip orphan scores instead of silently using 0.0.
+    level_value_map: dict[str, float] = {
+        f"{song.song_id}-{int(d.level_index)}": d.level_value
+        for song in result.root
+        for d in song.difficulties
+    }
     await writefile(merge_music_file, result.model_dump())
 
     return result, level_value_map

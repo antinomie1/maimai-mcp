@@ -31,6 +31,52 @@ class MaiMusic:
     def loaded(self) -> bool:
         return self._loaded
 
+    @staticmethod
+    def build_level_value_map(music_list: MusicList) -> dict[str, float]:
+        """Build chart constant map from a MusicList (plain dict, not defaultdict)."""
+        return {
+            f"{song.song_id}-{int(d.level_index)}": d.level_value
+            for song in music_list.root
+            for d in song.difficulties
+        }
+
+    def resolve_level_value(
+        self, song_id: int, level_index: int
+    ) -> float | None:
+        """Look up chart constant; return None if the chart is missing from catalog."""
+        key = f"{song_id}-{int(level_index)}"
+        level_map = getattr(self, "total_level_value_map", None) or {}
+        if key in level_map:
+            return level_map[key]
+        total_list = getattr(self, "total_list", None)
+        if total_list is None:
+            return None
+        found = total_list.by_id(song_id)
+        if found is None:
+            return None
+        li = int(level_index)
+        for d in found.difficulties:
+            if int(d.level_index) == li:
+                return d.level_value
+        return None
+
+    def dx_score_of(self, song_id: int, level_index: int) -> int | None:
+        """DX score max for a chart, or None if missing."""
+        total_list = getattr(self, "total_list", None)
+        if total_list is None:
+            return None
+        found = total_list.by_id(song_id)
+        if found is None:
+            return None
+        li = int(level_index)
+        for d in found.difficulties:
+            if int(d.level_index) == li:
+                return d.dx_score
+        try:
+            return found.difficulties[li].dx_score
+        except (IndexError, TypeError):
+            return None
+
     async def load_from_cache(self) -> bool:
         """Prefer local merge_*.json + plate_data.json when present (fast CLI startup)."""
         if not (
@@ -47,12 +93,7 @@ class MaiMusic:
             self.total_alias_list = AliasList.model_validate(alias_raw)
             self.total_plate_id_list = plate_raw
             self.total_level_data = self.total_list.by_level_list()
-            # rebuild level_value map
-            level_map: dict[str, float] = {}
-            for song in self.total_list.root:
-                for d in song.difficulties:
-                    level_map[f"{song.song_id}-{d.level_index}"] = d.level_value
-            self.total_level_value_map = level_map
+            self.total_level_value_map = self.build_level_value_map(self.total_list)
             self._loaded = True
             log.success(
                 f"已从本地缓存加载曲库（{len(self.total_list.root)} 首）"

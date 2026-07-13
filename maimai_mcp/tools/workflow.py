@@ -7,7 +7,7 @@ from mcp.server.fastmcp import FastMCP
 from maimai_mcp.result import FeatureResult
 
 from ..formatters import result_to_json
-from ..runtime import ensure_ready, run_fr
+from ..runtime import ensure_ready, run_fr, with_session_player
 from ..schemas import (
     B50Input,
     ChartInput,
@@ -27,6 +27,7 @@ from .tables import plate_impl
 async def lookup_song_impl(params: LookupSongInput) -> FeatureResult:
     """search → chart (and optional minfo)."""
     await ensure_ready()
+    params = with_session_player(params)
     search_fr = await search_impl(
         SearchInput(
             query=params.query,
@@ -93,6 +94,7 @@ async def lookup_song_impl(params: LookupSongInput) -> FeatureResult:
 
 async def player_overview_impl(params: PlayerOverviewInput) -> FeatureResult:
     await ensure_ready()
+    params = with_session_player(params)
     b50_fr = await b50_impl(
         B50Input(
             qq=params.qq,
@@ -127,6 +129,7 @@ async def player_overview_impl(params: PlayerOverviewInput) -> FeatureResult:
 async def push_plan_impl(params: PushPlanInput) -> FeatureResult:
     """b50 (json) + rise + chart for first SD recommendation if any."""
     await ensure_ready()
+    params = with_session_player(params)
     b50_fr = await b50_impl(
         B50Input(qq=params.qq, username=params.username, format="json")
     )

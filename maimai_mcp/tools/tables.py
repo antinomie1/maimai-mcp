@@ -20,7 +20,7 @@ from maimai_mcp.features.rating_table.query import query_rating_table
 from maimai_mcp.result import FeatureResult
 
 from ..formatters import result_to_json
-from ..runtime import ensure_ready, run_fr
+from ..runtime import ensure_ready, run_fr, with_session_player
 from ..schemas import (
     GinfoInput,
     LevelProgressInput,
@@ -32,6 +32,7 @@ from ..schemas import (
 
 async def plate_impl(params: PlateInput) -> FeatureResult:
     await ensure_ready()
+    params = with_session_player(params)
     user, play_result, ver, version_name, plan = await query_plate(
         params.ver, params.plan, params.qq, username=params.username
     )
@@ -99,21 +100,22 @@ def register(mcp: FastMCP) -> None:
 
         async def _go():
             await ensure_ready()
+            p = with_session_player(params)
             rating, user, play_result, with_p = await query_rating_table(
-                params.level,
-                qq=params.qq,
-                username=params.username,
-                with_progress=params.progress or params.plan,
+                p.level,
+                qq=p.qq,
+                username=p.username,
+                with_progress=p.progress or p.plan,
             )
             if with_p and user and play_result is not None:
                 return draw_rating_table_progress(
                     rating,
                     user.service,
                     play_result,
-                    plan=params.plan,
-                    out=params.out,
+                    plan=p.plan,
+                    out=p.out,
                 )
-            return draw_rating_table_text(rating, out=params.out)
+            return draw_rating_table_text(rating, out=p.out)
 
         return result_to_json(
             await run_fr(_go()), include_image_b64=params.include_image_b64
@@ -151,16 +153,17 @@ def register(mcp: FastMCP) -> None:
 
         async def _go():
             await ensure_ready()
+            p = with_session_player(params)
             user, level, plan, cat, page, c, u, n = await query_level_progress(
-                params.level,
-                params.plan,
-                qq=params.qq,
-                username=params.username,
-                category=params.category,
-                page=params.page,
+                p.level,
+                p.plan,
+                qq=p.qq,
+                username=p.username,
+                category=p.category,
+                page=p.page,
             )
             return draw_level_progress(
-                user, level, plan, cat, page, c, u, n, out=params.out
+                user, level, plan, cat, page, c, u, n, out=p.out
             )
 
         return result_to_json(
@@ -182,16 +185,17 @@ def register(mcp: FastMCP) -> None:
 
         async def _go():
             await ensure_ready()
+            p = with_session_player(params)
             user, rating, page, results = await query_level_score_list(
-                params.rating,
-                qq=params.qq,
-                username=params.username,
-                page=params.page,
+                p.rating,
+                qq=p.qq,
+                username=p.username,
+                page=p.page,
             )
-            if params.format == "json" and not params.out:
+            if p.format == "json" and not p.out:
                 return FeatureResult.success(data=results)
             return draw_level_score_list(
-                user, rating, page, results, out=params.out
+                user, rating, page, results, out=p.out
             )
 
         return result_to_json(
