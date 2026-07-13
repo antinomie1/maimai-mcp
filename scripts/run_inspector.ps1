@@ -20,7 +20,7 @@ if (-not (Test-Path $envFile)) {
     Write-Warning "Missing $envFile — copy maimai_mcp\.env.example and set MAIMAIDX_PATH"
 }
 
-# Prefer npx inspector; pass the same command Grok would use
+# Prefer npx inspector; same command as MCP clients use
 $serverCmd = $Python
 $serverArgs = @("-m", "maimai_mcp")
 

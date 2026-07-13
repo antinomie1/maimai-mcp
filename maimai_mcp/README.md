@@ -5,7 +5,7 @@
 完整说明见仓库根目录：
 
 → **[README.md](../README.md)**  
-→ **[docs/AGENT.md](../docs/AGENT.md)**（通用 Agent 规则；对用户不输出 QQ/群号）
+→ **[skills/maimai-mcp/](../skills/maimai-mcp/)**（MCP 调用 skill，中文）
 
 ```bash
 # MCP

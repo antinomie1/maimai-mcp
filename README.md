@@ -29,7 +29,7 @@ maimai_mcp/           主包（业务 + CLI + MCP）
   core/               客户端、领域逻辑、绘图、QQ 身份缓存（NapCat 拉取）
   features/           功能拆分（query / draw）
   tools/              MCP 工具注册
-docs/                 Agent 通用规则等
+skills/               Agent skill（maimai-mcp 调用规则）
 scripts/              Inspector、冒烟脚本
 static/               曲库 JSON、字体、封面等资源（自备）
 output/               默认出图目录
@@ -209,10 +209,11 @@ python scripts/smoke_mcp_tools.py --username <水鱼用户名>
 
 ### 会话与身份（Agent 必读）
 
-1. **玩家 QQ** 与 **群号** 分离：  
+1. **仅当用户意图是舞萌查分/查歌/进度等时** 才调用 `maimai_*`；闲聊、发消息失败、`stop` 等 **不要** 调 MCP。  
+2. **玩家 QQ** 与 **群号** 分离：  
    - `qq` = 发送者或被查对象  
    - `group_id` = 当前群（可选，**绝不**当查分 QQ）
-2. 推荐对话开始时：
+3. **真正查分前**（本进程尚未设置时）可：
 
    ```json
    {
@@ -223,12 +224,12 @@ python scripts/smoke_mcp_tools.py --username <水鱼用户名>
    }
    ```
 
-   之后同 MCP 进程内可省略 `qq`（粘性 session）。**重启 MCP 后需重新 set。**
-3. 若 `qq == group_id`，或可选缓存里该 id 仅是「群」不是「用户」，工具会 **校验失败** 并提示。
-4. 聊天前缀 `昵称/<用户QQ>`、会话 `...:<用户QQ>_<群号>` 中：  
-   **前者是用户 QQ，后者后半段是群号。**
+   之后同 MCP 进程内可省略 `qq`（粘性 session）。**重启 MCP 后需重新 set。**  
+   不要每条消息无条件 `maimai_set_identity`。
+4. 若 `qq == group_id`，或缓存里该 id 仅是「群」不是「用户」，工具会 **校验失败**。失败时 **不要** 对调 `qq`/`group_id` 碰运气，也 **不要** 对错误 id 改主题/数据源。
+5. 会话 `...:<用户QQ>_<群号>`：后半段是群号。宿主日志 `昵称/数字` **勿默认当玩家 QQ**，以 OneBot `user_id` / `group_id` 为准。
 
-通用 Agent 规则（含「用户回复禁止输出 QQ/群号」）：**[docs/AGENT.md](docs/AGENT.md)**。可整段写入系统提示。
+完整调用规则见 skill：**[`skills/maimai-mcp/SKILL.md`](skills/maimai-mcp/SKILL.md)**。
 
 ### QQ 身份缓存（NapCat 主动拉取）
 
@@ -282,7 +283,7 @@ maimai_get_qq_identity    # 按 QQ 读缓存昵称
 
 `maimai_refresh_identity` 可选参数：`timeout_ms`、`group_delay_ms`、`max_groups`（测试用）、`base_url`（临时覆盖地址）。
 
-群很多时拉取会较久，属正常现象。对用户回复仍 **不要念出 QQ/群号**（见 [docs/AGENT.md](docs/AGENT.md)）。
+群很多时拉取会较久，属正常现象。对用户回复仍 **不要念出 QQ/群号**（见 [maimai-mcp skill](skills/maimai-mcp/SKILL.md)）。
 
 ### 曲库与孤儿成绩
 
@@ -297,9 +298,11 @@ python -m maimai_mcp.cli update tables
 ## Agent / 宿主集成
 
 1. 配置 MCP：`python -m maimai_mcp`（见上文配置示例）。  
-2. 将 [docs/AGENT.md](docs/AGENT.md) 纳入系统提示或 Agent 说明。  
-3. **用户可见文本不得出现 QQ 号 / 群号**；身份数字仅作工具参数。  
-4. 更稳妥：宿主在请求前写入玩家身份（或调用 `maimai_set_identity`），避免模型猜号。
+2. 调用规则 skill：[`skills/maimai-mcp/`](skills/maimai-mcp/)（`SKILL.md` + `references/tools.md`，中文）。  
+   宿主将 skill 纳入系统提示或 skill 加载路径即可。  
+3. **仅在用户明确查舞萌相关内容时** 调用 `maimai_*`；勿在无关对话里 set_identity / 查分。  
+4. **用户可见文本不得出现 QQ 号 / 群号**；身份数字仅作工具参数。  
+5. 更稳妥：宿主在**真正查分请求前**注入玩家 `user_id`（或调用 `maimai_set_identity`），避免模型猜号。
 
 ## 数据源说明
 
