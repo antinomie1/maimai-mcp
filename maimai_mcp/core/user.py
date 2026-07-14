@@ -53,13 +53,12 @@ async def resolve_user(
     auto_create: bool = True,
     require_lxns_auth: bool = False,
 ) -> User:
-    """Resolve local user row by QQ (falls back to DEFAULT_QQ)."""
-    qqid = qq if qq is not None else maiconfig.default_qq
-    if qqid is None:
+    """Resolve local user row by QQ."""
+    if qq is None:
         raise ValidationError(
-            "未指定玩家 QQ。请传 qq（发送者/被查对象，不是群号），"
-            "或配置 DEFAULT_QQ（CLI）；也可用 username。"
+            "未指定玩家 QQ。请传 qq（发送者/被查对象，不是群号）；也可用 username。"
         )
+    qqid = qq
 
     try:
         user = await get_user(qqid)
@@ -86,18 +85,15 @@ async def resolve_player(
     """
     Resolve player for score queries.
 
-    - ``--username`` → 水鱼用户名查询（可同时 ``--qq`` 只取本地主题）
-    - 仅 ``--qq`` / DEFAULT_QQ → 本地用户 + 绑定数据源
-    - 仅 DEFAULT_USERNAME → 水鱼用户名
+    - ``username`` → 水鱼用户名查询（可同时 ``qq`` 只取本地主题）
+    - 仅 ``qq`` → 本地用户 + 其设定中的数据源（默认水鱼）
     - ``optional=True`` 时两者都没有则返回 None
     """
     uname = (username or "").strip() or None
-    if uname is None and qq is None:
-        uname = (maiconfig.default_username or "").strip() or None
 
     if uname:
         user = ephemeral_user()
-        if qq is not None or maiconfig.default_qq is not None:
+        if qq is not None:
             try:
                 user = await resolve_user(
                     qq, auto_create=auto_create, require_lxns_auth=False

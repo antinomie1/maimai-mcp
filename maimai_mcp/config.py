@@ -22,8 +22,6 @@ class BaseConfig(Settings):
     save_in_memory: bool | None = True
     assets_online: bool | None = True
     bot_name: str = "maimai"
-    default_qq: int | None = None
-    default_username: str | None = None  # Diving-Fish username when no --qq
     output_dir: str = str(Root.parent / "output")
 
 

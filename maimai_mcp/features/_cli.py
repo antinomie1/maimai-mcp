@@ -6,18 +6,17 @@ import argparse
 import asyncio
 from typing import Any, Awaitable
 
-from ..config import maiconfig
 from ..core.errors import as_result, wrap_exception
 from ..result import FeatureResult
 
 
 def add_common_args(parser: argparse.ArgumentParser, *, with_quiet: bool = True) -> None:
-    parser.add_argument("--qq", type=int, default=None, help="QQ 号（默认 DEFAULT_QQ）")
+    parser.add_argument("--qq", type=int, default=None, help="QQ 号")
     parser.add_argument(
         "--username",
         "-u",
         default=None,
-        help="水鱼查分器用户名（可与 --qq 二选一；默认 DEFAULT_USERNAME）",
+        help="水鱼查分器用户名（可与 --qq 二选一）",
     )
     parser.add_argument(
         "--format",
@@ -51,10 +50,6 @@ async def ensure_ready(*, load_music: bool = True, quiet: bool = True) -> None:
     from ..bootstrap import bootstrap
 
     await bootstrap(load_music=load_music, quiet=quiet)
-
-
-def default_qq(args: argparse.Namespace) -> int | None:
-    return args.qq if getattr(args, "qq", None) is not None else maiconfig.default_qq
 
 
 async def run_feature(coro: Awaitable[Any]) -> FeatureResult:

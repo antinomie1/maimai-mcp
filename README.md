@@ -78,8 +78,6 @@ python -m maimai_mcp.cli update tables
 | `SAVE_IN_MEMORY` | 否 | `true` | 预载主题贴图（更快、更吃内存） |
 | `ASSETS_ONLINE` | 否 | `true` | 封面等缺失时是否允许在线补全 |
 | `BOT_NAME` | 否 | `maimai` | 展示名（运势、落雪授权提示） |
-| `DEFAULT_QQ` | 否 | — | 未传 QQ 时的默认玩家 QQ |
-| `DEFAULT_USERNAME` | 否 | — | 默认水鱼用户名 |
 | `OUTPUT_DIR` | 否 | 仓库 `output/` | 出图默认目录 |
 | `QQ_IDENTITY_CACHE_DIR` | 否 | `./qq-identity-cache` | 身份缓存目录（`identity_cache.json`） |
 | `NAPCAT_BASE_URL` | 刷新身份缓存时需要 | — | NapCat HTTP 地址，如 `http://127.0.0.1:3000`（也可用 `ONEBOT_BASE_URL`） |
@@ -292,8 +290,8 @@ python -m maimai_mcp.cli update tables
 
 | 源 | 用途 |
 |----|------|
-| Diving-Fish 水鱼 | 默认成绩、曲库、排名 |
-| Lxns 落雪 | 可选成绩源、曲库合并、OAuth |
+| Diving-Fish 水鱼 | 默认成绩源、曲库、排名 |
+| Lxns 落雪 | 用户可切换的成绩源、曲库合并、OAuth |
 | Yuzu 柚子 | 别名 |
 | NapCat | 身份缓存：好友/群/群成员 HTTP 拉取 |
 

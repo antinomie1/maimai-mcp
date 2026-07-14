@@ -12,8 +12,6 @@
         "SAVE_IN_MEMORY": "true",
         "ASSETS_ONLINE": "true",
         "BOT_NAME": "maimai",
-        "DEFAULT_USERNAME": "",
-        "DEFAULT_QQ": "",
         "DIVINGFISH_TOKEN": "",
         "DIVINGFISH_PROBER_PROXY": "false",
         "LXNS_DEV_TOKEN": "",

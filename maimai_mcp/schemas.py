@@ -22,8 +22,7 @@ class PlayerArgs(StrictModel):
         default=None,
         description=(
             "Player QQ (sender or target). NEVER put group id here. "
-            "Pass every call; chat context is NOT auto-injected. "
-            "CLI may use DEFAULT_QQ when omitted."
+            "Pass every call; chat context is NOT auto-injected."
         ),
         ge=1,
     )

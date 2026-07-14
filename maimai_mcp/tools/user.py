@@ -162,7 +162,7 @@ def register(mcp: FastMCP) -> None:
         },
     )
     async def maimai_user_show(qq: int | None = None) -> str:
-        """Show theme/service for a QQ (DEFAULT_QQ if omitted)."""
+        """Show theme/service for a player QQ (must pass qq)."""
 
         async def _go():
             await ensure_ready(load_music=False)

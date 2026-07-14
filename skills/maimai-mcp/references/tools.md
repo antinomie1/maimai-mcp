@@ -46,14 +46,15 @@
 
 ## 用户设置（per-QQ，仅用户明确要求时）
 
-设定按 **玩家 qq** 存在本地库；查分带同一 `qq` 即自动用其主题 / 默认查分器。  
+设定按 **玩家 qq** 存在本地库。查分时自动用该用户的主题与数据源：  
+**默认水鱼**；用户改过则以 `maimai_user_show` 看到的 `service` 为准。  
 **不要**当作「身份错了」的补救；改设定也要传正确 `params.qq`。
 
 | 工具 | 作用 |
 |------|------|
-| `maimai_user_show` | 查看主题 / 数据源 |
+| `maimai_user_show` | 查看主题 / 数据源（`service`） |
 | `maimai_user_set_theme` | `circle` / `prism_plus` |
-| `maimai_user_set_source` | 水鱼 / 落雪 |
+| `maimai_user_set_source` | 水鱼 / 落雪（仅用户明确要求） |
 | `maimai_user_bind_lxns` | 落雪 OAuth |
 
 ## 【高级·默认跳过】昵称缓存

@@ -26,7 +26,7 @@ def _fortune_seed(qq: int | None, username: str | None) -> int:
 async def query_fortune(
     qq: int | None = None, *, username: str | None = None
 ) -> tuple[str, Song]:
-    # Prefer explicit identity; optional so username-only works without DEFAULT_QQ
+    # Prefer explicit identity; optional so username-only / no-id still works
     ref = await resolve_player(qq, username, optional=True)
     seed_qq = ref.user.qqid if ref and ref.user.qqid else None
     seed_user = ref.username if ref else username
