@@ -6,6 +6,7 @@
 - 查分 / 出图 / 运势：**每次**传玩家 `qq`（默认=**发送者**）或 `username`。
 - **@机器人只是唤醒**，`params.qq` 禁止填机器人自身 QQ。
 - 出图优先 `format: "image"`；成功返回 `image_path` 后必须用宿主发图，不要只回文字。
+- **勿**对出图需求传 `format: "json"`（会跳过绘图，没有 `image_path`）。
 - 一次只调一个工具；单一能力优先原子工具。
 
 ## 成绩 / 进度
@@ -27,7 +28,7 @@
 | 工具 | 作用 |
 |------|------|
 | `maimai_search` / `maimai_lookup_song` | 搜歌 / 搜+出图 |
-| `maimai_chart` / `maimai_ginfo` | 谱面信息 / 全服统计 |
+| `maimai_chart` | 谱面信息图 |
 | `maimai_random` / `maimai_mai_what` | 随机 / 带上分偏向 |
 | `maimai_score_line` | 分数线容错 |
 | `maimai_alias_query` / `maimai_alias_local_add` | 别名 |

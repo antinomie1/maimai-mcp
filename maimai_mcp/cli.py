@@ -96,11 +96,6 @@ def _build_parser() -> argparse.ArgumentParser:
     _common(p)
     p.add_argument("song", help="曲目 ID / 名 / 别名")
 
-    p = sub.add_parser("ginfo", help="全服谱面统计")
-    _common(p)
-    p.add_argument("song", help="可选前缀绿黄红紫白 + 曲目")
-    p.add_argument("--diff", type=int, default=None)
-
     p = sub.add_parser("rise", help="上分推荐")
     _common(p)
     p.add_argument("--level", default=None)
@@ -370,25 +365,6 @@ async def _dispatch(args: argparse.Namespace) -> FeatureResult:
                 data={"song_id": song.song_id, "play_result": play_result}
             )
         return draw_play_score(user, song, play_result, out=args.out)
-
-    if cmd == "ginfo":
-        from .features.global_chart.draw import draw_global_chart
-        from .features.global_chart.query import query_global_chart
-
-        song_key = args.song.strip()
-        level_index = args.diff
-        if level_index is None:
-            if song_key and song_key[0] in "绿黄红紫白":
-                level_index = "绿黄红紫白".index(song_key[0])
-                song_key = song_key[1:].strip()
-            else:
-                level_index = 3
-        song, li, text = await query_global_chart(song_key, level_index)
-        if args.format == "json" and not args.out:
-            return FeatureResult.success(
-                text=text, data={"song_id": song.song_id, "level_index": li}
-            )
-        return await draw_global_chart(song, li, text, out=args.out)
 
     if cmd == "rise":
         from .features.rise_score.draw import draw_rise_score

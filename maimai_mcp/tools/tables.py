@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
-from maimai_mcp.features.global_chart.draw import draw_global_chart
-from maimai_mcp.features.global_chart.query import query_global_chart
 from maimai_mcp.features.level_progress.draw import draw_level_progress
 from maimai_mcp.features.level_progress.query import query_level_progress
 from maimai_mcp.features.level_score_list.draw import draw_level_score_list
@@ -22,7 +20,6 @@ from maimai_mcp.result import FeatureResult
 from ..formatters import result_to_json
 from ..runtime import ensure_ready, run_fr, normalize_player
 from ..schemas import (
-    GinfoInput,
     LevelProgressInput,
     PlateInput,
     RatingTableInput,
@@ -51,40 +48,6 @@ async def plate_impl(params: PlateInput) -> FeatureResult:
 
 
 def register(mcp: FastMCP) -> None:
-    @mcp.tool(
-        name="maimai_ginfo",
-        annotations={
-            "title": "Global chart stats",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
-            "openWorldHint": False,
-        },
-    )
-    async def maimai_ginfo(params: GinfoInput) -> str:
-        """Global play stats + pie chart for a difficulty (ginfo)."""
-
-        async def _go():
-            await ensure_ready()
-            song_key = params.song.strip()
-            level_index = params.diff
-            if level_index is None:
-                if song_key and song_key[0] in "绿黄红紫白":
-                    level_index = "绿黄红紫白".index(song_key[0])
-                    song_key = song_key[1:].strip()
-                else:
-                    level_index = 3
-            song, li, text = await query_global_chart(song_key, level_index)
-            if params.format == "json" and not params.out:
-                return FeatureResult.success(
-                    text=text, data={"song_id": song.song_id, "level_index": li}
-                )
-            return await draw_global_chart(song, li, text, out=params.out)
-
-        return result_to_json(
-            await run_fr(_go()), include_image_b64=params.include_image_b64
-        )
-
     @mcp.tool(
         name="maimai_rating_table",
         annotations={

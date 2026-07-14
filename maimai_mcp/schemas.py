@@ -36,7 +36,10 @@ class PlayerArgs(StrictModel):
 class ImageOutArgs(StrictModel):
     format: Literal["text", "json", "image"] = Field(
         default="image",
-        description="Prefer image for draw tools; json for structured data only.",
+        description=(
+            "Prefer image (default). format=json skips drawing and returns "
+            "structured data only — do NOT use json when the user expects a chart image."
+        ),
     )
     include_image_b64: bool = Field(
         default=False,
@@ -150,11 +153,6 @@ class LevelProgressInput(PlayerArgs, ImageOutArgs):
 class ScoreListInput(PlayerArgs, ImageOutArgs):
     rating: str = Field(..., description="Level 14 or constant 14.0")
     page: int = Field(default=1, ge=1)
-
-
-class GinfoInput(ImageOutArgs):
-    song: str = Field(..., description="Optional color prefix 绿黄红紫白 + song")
-    diff: int | None = Field(default=None, ge=0, le=4, description="Difficulty index 0-4")
 
 
 class RankingInput(PlayerArgs):

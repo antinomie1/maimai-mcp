@@ -116,6 +116,9 @@ def exception_to_message(exc: BaseException) -> str:
             f"曲库缺少谱面数据（{key}）。"
             "请执行 maimai_update_catalog 更新曲库；若仍失败请反馈该 key。"
         )
+    if isinstance(exc, FileNotFoundError):
+        log.error(f"发生错误: {traceback.format_exc()}")
+        return f"缺少资源文件：{exc}"
     log.error(f"发生错误: {traceback.format_exc()}")
     return f"发生未知错误：{type(exc).__name__}"
 

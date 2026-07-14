@@ -1,12 +1,9 @@
-import pyecharts.options as opts
 from PIL import Image, ImageDraw
-from pyecharts.charts import Pie
 
 from ...config import maiconfig
-from ...constants import ACHIEVEMENT_LIST, COMBO_PLUS, DIFFS, RANK_PLUS
-from ...resources import FOTNEWRODIN, SIYUAN, pic_dir, pie_html_file
+from ...constants import ACHIEVEMENT_LIST
+from ...resources import FOTNEWRODIN, SIYUAN, pic_dir
 from ..merge.models import PlayedResult, Song, Theme
-from ..tool import run_chrome_to_base64
 from ..utils.calc import compute_rating
 from .base import change_column_width, coloum_width
 from .tools import (
@@ -15,89 +12,6 @@ from .tools import (
 )
 
 NOTE_FIELDS = ["total", "tap", "hold", "slide", "touch", "brk"]
-
-
-async def song_global_data(song: Song, level_index: int) -> str:
-    """
-    绘制曲目游玩详情
-
-    Params:
-        `song`: 曲目 `Song`
-        `level_index`: 难度
-    Returns:
-        `base64 str`
-    """
-    stats = song.difficulties[level_index].stats
-    fc_data_pair = [
-        list(_)
-        for _ in zip(
-            [c.upper() if c else "Not FC" for c in [""] + COMBO_PLUS], stats.fc_dist
-        )
-    ]
-    acc_data_pair = [list(_) for _ in zip([s.upper() for s in RANK_PLUS], stats.dist)]
-
-    rich = (
-        {
-            "a": {"color": "#999", "lineHeight": 22, "align": "center"},
-            "abg": {
-                "backgroundColor": "#e3e3e3",
-                "width": "100%",
-                "align": "right",
-                "height": 22,
-                "borderRadius": [4, 4, 0, 0],
-            },
-            "hr": {
-                "borderColor": "#aaa",
-                "width": "100%",
-                "borderWidth": 0.5,
-                "height": 0,
-            },
-            "b": {"fontSize": 16, "lineHeight": 33},
-            "per": {
-                "color": "#eee",
-                "backgroundColor": "#334455",
-                "padding": [2, 4],
-                "borderRadius": 2,
-            },
-        },
-    )
-
-    initopts = opts.InitOpts(
-        width="1000px", height="800px", bg_color="#fff", js_host="./"
-    )
-    labelopts = opts.LabelOpts(
-        position="outside",
-        formatter="{a|{a}}{abg|}\n{hr|}\n {b|{b}: }{c}  {per|{d}%}  ",
-        background_color="#eee",
-        border_color="#aaa",
-        border_width=1,
-        border_radius=4,
-        rich=rich,
-    )
-    titleopts = opts.TitleOpts(
-        title=f"{song.song_id} {song.song_name} 「{DIFFS[level_index]}」",
-        pos_left="center",
-        pos_top="20",
-        title_textstyle_opts=opts.TextStyleOpts(color="#2c343c"),
-    )
-    legendopts = opts.LegendOpts(pos_left=15, pos_top=10, orient="vertical")
-    tooltipopts = opts.TooltipOpts(trigger="item", formatter="{a} <br/>{b}: {c} ({d}%)")
-
-    pie = Pie(initopts)
-    pie.add("全连等级", fc_data_pair, radius=[0, "30%"], label_opts=labelopts)
-    pie.add(
-        "达成率等级",
-        acc_data_pair,
-        radius=["50%", "70%"],
-        is_clockwise=True,
-        label_opts=labelopts,
-    )
-    pie.set_global_opts(title_opts=titleopts, legend_opts=legendopts)
-    pie.set_series_opts(tooltip_opts=tooltipopts)
-    pie.render(str(pie_html_file))
-    base64 = await run_chrome_to_base64()
-
-    return base64
 
 
 def get_best_rating(rating: float) -> list[int]:

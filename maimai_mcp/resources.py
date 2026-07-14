@@ -27,7 +27,6 @@ plate_table_dir.mkdir(parents=True, exist_ok=True)
 rating_table_dir.mkdir(parents=True, exist_ok=True)
 
 # 路径文件
-pie_html_file = static / "temp_pie.html"
 alias_file = data_dir / "music_alias.json"
 lxns_alias_file = data_dir / "lxns_music_alias.json"
 local_alias_file = data_dir / "local_music_alias.json"

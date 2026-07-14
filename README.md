@@ -1,168 +1,57 @@
 # maimai-mcp
 
-本地可用的舞萌 DX **查询库 / CLI / MCP 服务**：查曲、查分、进度与绘图，供命令行或任意 Agent / 宿主调用。
+[![PyPI version](https://badge.fury.io/py/maimai-mcp.svg)](https://badge.fury.io/py/maimai-mcp)
+[![Python versions](https://img.shields.io/pypi/pyversions/maimai-mcp.svg)](https://pypi.org/project/maimai-mcp/)
+
+本地可用的舞萌 DX 查询库 / CLI / MCP 服务：查曲、查分、进度与绘图，供命令行或任意 Agent / 宿主调用。
 
 - 仓库：https://github.com/antinomie1/maimai-mcp  
-- 绘图与业务参考：[Yuri-YuzuChaN/maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX)  
+- 绘图与业务参考：[Yuri-YuzuChaN/maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX)
 
-## 功能概览
+Python ≥ 3.10。成绩默认走[水鱼查分器](https://www.diving-fish.com/maimaidx/prober/)，也可切换到[落雪](https://maimai.lxns.net/)（需 Token / OAuth 绑定）。出图默认主题为 **circle**，可按 QQ 改为 **prism_plus**。
 
-| 类别 | 能力 |
-|------|------|
-| 曲库 | 搜歌、别名、谱面信息、随机曲、分数线 |
-| 成绩 | 水鱼 / 落雪 B50、单曲成绩、等级/定数分数列表 |
-| 进度 | 牌子完成表、定数表、等级进度、上分推荐 |
-| 其它 | 排名、今日运势、曲目全服统计（ginfo） |
-| 用户设定 | 按 QQ 存主题 / 默认查分器 / 落雪 token（`user.db`） |
-| 身份缓存 | 经 **NapCat** HTTP API 拉取好友/群成员 → `identity_cache.json`，昵称反查 QQ |
+CLI 命令（`maimai …`）与 MCP 工具（`maimai_*`）能力一一对应；Agent 侧参数须包在 `params` 中，查分时每次显式传入玩家 `qq` 或 `username`（MCP 不会自动读聊天上下文）。
 
-默认主题 **circle**；需要 `prism_plus` 时再切换。  
-**水鱼**为主路径；**落雪**可选（需 Token / OAuth 绑定）。
+---
 
-> **重要：** MCP **不会**自动读取聊天上下文里的 QQ。Agent **每次**查分须在 `params` 中显式传 `qq`（或 `username`）。  
-> **禁止把群号填进 `qq`**（例如会话 `GroupMessage:用户QQ_群号` 中，第二段是群号）。
+## 部署（pip，推荐）
 
-## 目录结构
-
-```text
-maimai_mcp/           主包（业务 + CLI + MCP）
-  core/               客户端、领域逻辑、绘图、QQ 身份缓存（NapCat 拉取）
-  features/           功能拆分（query / draw）
-  tools/              MCP 工具注册
-skills/               Agent skill（maimai-mcp 调用规则）
-scripts/              Inspector、冒烟脚本
-static/               曲库 JSON、字体、封面等资源（自备）
-output/               默认出图目录
-mcp.example.json      MCP 客户端配置示例
-```
-
-## 安装
-
-要求 **Python ≥ 3.10**。包名：[`maimai-mcp`](https://pypi.org/project/maimai-mcp/)（import 名 `maimai_mcp`）。  
-GitHub Release：https://github.com/antinomie1/maimai-mcp/releases
-
-> **静态资源不随 PyPI 包分发**（体积约数百 MB）。请单独下载资源包，并通过 `MAIMAIDX_PATH` 指向其中的 `static` 目录。
-
-### 从 PyPI 安装（推荐）
+### 1. 安装包
 
 ```bash
 pip install maimai-mcp
-# ginfo 饼图需要：
-# playwright install chromium
 ```
 
-安装后可用入口：
+安装完成后提供两个入口：
 
-| 命令 | 说明 |
-|------|------|
-| `maimai` | CLI |
-| `maimai-mcp` | MCP stdio 服务 |
-| `python -m maimai_mcp` | 同上（MCP） |
-| `python -m maimai_mcp.cli ...` | CLI 子命令 |
+- `maimai-mcp`：stdio MCP 服务  
+- `maimai`：命令行  
 
-环境变量请写在 **MCP 客户端配置的 `env`**，或系统/用户环境中（见下方）。`pip install` 后不建议在 site-packages 里写 `.env`。
+也可用模块方式启动：`python -m maimai_mcp` / `python -m maimai_mcp.cli`。
 
-### 从源码开发安装
+### 2. 下载静态资源
 
-```bash
-git clone https://github.com/antinomie1/maimai-mcp.git
-cd maimai-mcp
-pip install -e .
-# playwright install chromium
-
-cp maimai_mcp/.env.example maimai_mcp/.env
-# 编辑 maimai_mcp/.env，至少填写 MAIMAIDX_PATH
-```
-
-### 静态资源
-
-与 maimaiDX 相同资源包，解压后将 `MAIMAIDX_PATH` 指向其中的 `static` 目录：
+封面、底图、字体等资源**不随 PyPI 包分发**。请下载并解压资源包，记下其中 **`static` 目录的绝对路径**：
 
 - [Cloudreve](https://cloud.yuzuchan.moe/f/34s7/Resource%20CN1.55.7z)
 - [OneDrive](https://yuzuai-my.sharepoint.com/:u:/g/personal/yuzu_yuzuchan_moe/IQBGKHie6MAaTZy3rME7Q-ruAVKgXDCKROqz5e25KtMeeVY?e=53eC6a)
 
-请遵守上游美术相关声明。首次使用表类指令前建议生成表图：
+请遵守上游美术与字体相关声明。
 
-```bash
-maimai update tables
-# 或：python -m maimai_mcp.cli update tables
-```
+### 3. 配置环境变量
 
-## 环境变量
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `MAIMAIDX_PATH` | **是** | 上一步 `static` 的绝对路径 |
+| `DIVINGFISH_TOKEN` | 建议 | [水鱼开发者 Token](https://www.diving-fish.com/maimaidx/prober/)，提高接口配额与稳定性 |
+| `OUTPUT_DIR` | 否 | 出图保存目录；不设则使用包内默认位置 |
 
-配置从 `maimai_mcp/.env` 读取（`pydantic-settings`），也可在 MCP 客户端 `env` 中注入。  
-完整注释见 [`maimai_mcp/.env.example`](maimai_mcp/.env.example)。**不要提交含 Token 的 `.env` / `mcp.json`。**
+完整变量说明见 [`maimai_mcp/.env.example`](maimai_mcp/.env.example)。  
+通过 pip 安装时，请把变量写在 **MCP 客户端的 `env` 块**或系统环境中，不要改 site-packages 里的文件。
 
-### 路径与资源
+### 4. 接入 MCP 客户端
 
-| 变量 | 必填 | 默认 | 说明 |
-|------|------|------|------|
-| `MAIMAIDX_PATH` | **是** | — | `static` 资源目录的**绝对路径** |
-| `MAIMAIDX_ALIAS_PROXY` | 否 | `false` | `true` 时别名走国内域名 |
-| `SAVE_IN_MEMORY` | 否 | `true` | 预载主题贴图（更快、更吃内存） |
-| `ASSETS_ONLINE` | 否 | `true` | 封面等缺失时是否允许在线补全 |
-| `BOT_NAME` | 否 | `maimai` | 展示名（运势、落雪授权提示） |
-| `OUTPUT_DIR` | 否 | 仓库 `output/` | 出图默认目录 |
-| `QQ_IDENTITY_CACHE_DIR` | 否 | `./qq-identity-cache` | 身份缓存目录（`identity_cache.json`） |
-| `NAPCAT_BASE_URL` | 刷新身份缓存时需要 | — | NapCat HTTP 地址，如 `http://127.0.0.1:3000`（也可用 `ONEBOT_BASE_URL`） |
-| `NAPCAT_ACCESS_TOKEN` | 否 | — | NapCat HTTP 鉴权 Token（也可用 `ONEBOT_ACCESS_TOKEN`） |
-| `QQ_IDENTITY_GROUP_DELAY_MS` | 否 | `250` | 拉群成员时的组间间隔（毫秒） |
-
-### 水鱼 Diving-Fish
-
-| 变量 | 说明 |
-|------|------|
-| `DIVINGFISH_TOKEN` | 开发者 Token（强烈建议；无则查分可能仅限 b50） |
-| `DIVINGFISH_PROBER_PROXY` | 是否走代理访问水鱼 |
-
-申请：[水鱼查分器](https://www.diving-fish.com/maimaidx/prober/)
-
-### 落雪 Lxns（可选）
-
-| 变量 | 说明 |
-|------|------|
-| `LXNS_DEV_TOKEN` | 开发者 Token；曲库合并 / 落雪数据源依赖 |
-| `LX_CLIENT_ID` / `LX_CLIENT_SECRET` | OAuth 绑定 |
-| `REDIRECT_URI` | 本机常用 `urn:ietf:wg:oauth:2.0:oob` |
-
-### 最小示例
-
-```env
-MAIMAIDX_PATH=C:\path\to\maimai-mcp\static
-DIVINGFISH_TOKEN=你的水鱼Token
-OUTPUT_DIR=C:\path\to\maimai-mcp\output
-# 需要身份缓存（昵称反查 / 防群号当 QQ）时：
-# NAPCAT_BASE_URL=http://127.0.0.1:3000
-```
-
-## CLI
-
-```bash
-# 未 pip install -e 时：set PYTHONPATH=.
-python -m maimai_mcp.cli b50 --username <水鱼用户名> --out out/b50.png
-python -m maimai_mcp.cli b50 --qq <QQ>
-python -m maimai_mcp.cli chart 834
-python -m maimai_mcp.cli search --mode 定数 14.0 --format json
-python -m maimai_mcp.cli plate --ver 檄 --plan 极 --mode progress --qq <QQ>
-python -m maimai_mcp.cli user theme prism_plus --qq <QQ>
-python -m maimai_mcp.cli update music
-python -m maimai_mcp.cli update alias
-python -m maimai_mcp.cli update tables
-```
-
-入口脚本（install 后）：`maimai`、`maimai-mcp`。
-
-## MCP
-
-### 启动
-
-```bash
-python -m maimai_mcp
-```
-
-### 客户端配置
-
-**PyPI 安装后**（推荐）：用入口脚本，不必设置 `cwd` / `PYTHONPATH`：
+在客户端（Cursor、Claude Desktop、Grok 等）的 MCP 配置中加入类似：
 
 ```json
 {
@@ -179,176 +68,161 @@ python -m maimai_mcp
 }
 ```
 
-**源码 / 可编辑安装**时可参考 [`mcp.example.json`](mcp.example.json)；密钥也可写在 `maimai_mcp/.env`。本地私有配置可用 `mcp.json`（已 gitignore）。
+- 路径请换成真实位置；Windows 示例：`"C:\\\\path\\\\to\\\\static"`。  
+- 若 PATH 中找不到 `maimai-mcp`，可改为 `"command": "python", "args": ["-m", "maimai_mcp"]`。  
+- 更完整的字段示例见 [`mcp.example.json`](mcp.example.json)。  
+- 面向 Agent 的调用约定与避坑说明见 skill：[`skills/maimai-mcp/`](skills/maimai-mcp/)。
 
-### 联调
+启动成功后应能列出 `maimai_*` 工具；需要成绩时请传入玩家 `qq` 或水鱼 `username`。
+
+### 5. 初始化与自检
+
+表类功能（定数表、牌子表等）首次使用前建议先刷新资源，再用一两项查询确认环境正常：
 
 ```bash
-./scripts/run_inspector.ps1   # 或 run_inspector.sh
-python scripts/smoke_mcp_tools.py --username <水鱼用户名>
+maimai update tables
+maimai b50 --qq <QQ>
+maimai chart 834
 ```
 
-### 主要 Tools
+---
 
-参数一般包在 `params` 对象中。查分类工具 **每次**传 `qq` / `username`（无 session 粘性补全）。
+## 部署（源码）
+
+适合二次开发或希望跟踪仓库最新改动的场景。
+
+### 1. 克隆并安装
+
+```bash
+git clone https://github.com/antinomie1/maimai-mcp.git
+cd maimai-mcp
+pip install -e .
+```
+
+### 2. 下载静态资源
+
+与 [pip 部署第 2 步](#2-下载静态资源) 相同。可将资源放在仓库旁，或直接使用资源包内的 `static` 路径。
+
+### 3. 写配置
+
+```bash
+cp maimai_mcp/.env.example maimai_mcp/.env
+# 编辑 .env：至少设置 MAIMAIDX_PATH，建议填写 DIVINGFISH_TOKEN
+```
+
+也可以不写 `.env`，仅在 MCP 客户端的 `env` 中注入变量（字段含义见 [`.env.example`](maimai_mcp/.env.example)）。
+
+### 4. 接入 MCP 客户端
+
+源码布局下推荐用 `python -m maimai_mcp`，并指定仓库为工作目录：
+
+```json
+{
+  "mcpServers": {
+    "maimai": {
+      "command": "python",
+      "args": ["-m", "maimai_mcp"],
+      "cwd": "/path/to/maimai-mcp",
+      "env": {
+        "MAIMAIDX_PATH": "/path/to/static",
+        "OUTPUT_DIR": "/path/to/output",
+        "DIVINGFISH_TOKEN": ""
+      }
+    }
+  }
+}
+```
+
+Agent skill 仍在 [`skills/maimai-mcp/`](skills/maimai-mcp/)。本地联调可参考 `scripts/run_inspector.ps1` 与 `scripts/smoke_mcp_tools.py`。
+
+### 5. 初始化与自检
+
+```bash
+maimai update tables
+maimai b50 --qq <QQ>
+# 或：python -m maimai_mcp.cli b50 --qq <QQ>
+```
+
+---
+
+## 工具列表
+
+以下为 MCP 工具名与简要说明。CLI 侧为同名能力（例如 `maimai b50` 对应 `maimai_b50`）。  
+查分 / 出图类工具通常需要 `params.qq` 或 `params.username`；出图默认 `format: image`，成功时返回 `image_path`。
+
+更细的 Agent 约定见 [`skills/maimai-mcp/references/tools.md`](skills/maimai-mcp/references/tools.md)。
+
+### 成绩与进度
 
 | 工具 | 说明 |
 |------|------|
-| **昵称身份缓存（高级）** | |
-| `maimai_refresh_identity` | 经 **NapCat** 拉取好友/群/成员并写入身份缓存 |
-| `maimai_identity_status` | 身份缓存路径与统计 |
-| `maimai_resolve_qq` | 昵称/群名片反查 QQ（依赖缓存） |
-| `maimai_get_qq_identity` | 按 QQ 读缓存中的昵称信息 |
-| **用户设置** | |
-| `maimai_user_show` | 主题 / 数据源 |
-| `maimai_user_set_theme` | `circle` / `prism_plus` |
-| `maimai_user_set_source` | 水鱼 / 落雪 |
-| `maimai_user_bind_lxns` | 落雪 OAuth |
-| **成绩 / 进度** | |
-| `maimai_b50` | Best50 / AP50 |
-| `maimai_minfo` | 单曲成绩 |
-| `maimai_score_list` | 等级或定数分数列表 |
-| `maimai_plate` / `maimai_plate_status` | 牌子完成表 / 进度 |
-| `maimai_rating_table` | 定数表 |
-| `maimai_level_progress` | 等级进度 |
-| `maimai_rise` | 上分推荐 |
-| `maimai_ranking` | 水鱼公开 rating 榜 |
-| **曲库** | |
-| `maimai_search` / `maimai_lookup_song` | 搜歌 / 搜+出图 |
-| `maimai_chart` / `maimai_ginfo` | 谱面信息 / 全服统计 |
-| `maimai_random` / `maimai_mai_what` | 随机 / 带上分偏向 |
-| `maimai_score_line` | 分数线容错 |
-| `maimai_alias_query` / `maimai_alias_local_add` | 别名 |
-| `maimai_update_catalog` | 刷新曲库 / 别名 / 表图 |
-| **组合** | |
-| `maimai_player_overview` | B50 + 可选上分 |
-| `maimai_push_plan` | 上分计划串联 |
-| `maimai_fortune` | 今日运势 |
+| `maimai_b50` | 拉取并绘制 Best 50；水鱼可用 `username`，绑定服务可用 `qq`。`all_perfect=true` 为 AP50（需落雪 + 已绑定 QQ） |
+| `maimai_minfo` | 单曲个人成绩（minfo），须指定玩家身份 |
+| `maimai_score_list` | 按等级或定数（如 `14.0`）列出该玩家已打 / 相关分数 |
+| `maimai_plate` | 牌子完成表或进度图（如 `ver=祝` `plan=将`，`mode=progress` / `table`） |
+| `maimai_plate_status` | 与 `maimai_plate` 等价的薄封装，便于 Agent 发现「牌子进度」意图 |
+| `maimai_rating_table` | 等级定数表；`progress=true` 时叠加个人完成情况 |
+| `maimai_level_progress` | 某等级 + 目标的完成进度（如 `level=14` `plan=ap`） |
+| `maimai_rise` | 上分推荐谱面，可按等级 / 分数等条件筛选 |
+| `maimai_ranking` | 水鱼公开 rating 榜；可查榜、搜名，或 `my=true` 看自己位置 |
+| `maimai_fortune` | 今日运势 + 曲绘（娱乐向；`qq` / `username` 仅作随机种子） |
 
-### 玩家身份（Agent 必读）
+### 曲库与谱面
 
-1. **仅当用户意图是舞萌查分/查歌/进度等时** 才调用 `maimai_*`；闲聊、发消息失败、`stop` 等 **不要** 调 MCP。  
-2. **每次**在 `params` 中传玩家 `qq`（发送者或被 @）或 `username`；**禁止**把群号填进 `qq`。  
-3. 主题 / 默认查分器按该 `qq` 存在 `user.db`，带对 qq 即自动生效；**仅用户明确要求**时再改设定。  
-4. 若工具提示像是群号：改用正确玩家 id，**不要**对调字段碰运气，也 **不要** 对错误 id 改主题/数据源。  
-5. 会话 `...:<用户QQ>_<群号>`：后半段是群号。宿主日志 `昵称/数字` **勿默认当玩家 QQ**，以 OneBot `user_id` 为准。
+| 工具 | 说明 |
+|------|------|
+| `maimai_search` | 按曲名、定数、BPM、曲师、谱师等搜索；多结果返回列表，唯一命中时可直接出谱面图 |
+| `maimai_lookup_song` | 组合：搜索 → 出谱面图；可选 `with_minfo` 附带个人成绩（内部串联 search + chart ± minfo） |
+| `maimai_chart` | 按 ID / 曲名 / 别名绘制谱面信息图；可选带玩家身份以计算推分 |
+| `maimai_score_line` | 计算指定达成线（如 100%）下的 TAP GREAT 容错 |
+| `maimai_random` | 按等级 / 谱面类型 / 颜色随机一首并出谱面图 |
+| `maimai_mai_what` | 随机推曲；`rise=true` 时偏向有上分空间的谱面 |
+| `maimai_alias_query` | 查询某曲的别名列表 |
+| `maimai_alias_local_add` | 仅写入本地的别名（不上报远端投票） |
+| `maimai_update_catalog` | 刷新曲库数据、别名，和/或重绘定数表、牌子表资源 |
 
-完整调用规则见 skill：**[`skills/maimai-mcp/SKILL.md`](skills/maimai-mcp/SKILL.md)**。
+### 组合工作流
 
-### QQ 身份缓存（NapCat 主动拉取）
+| 工具 | 说明 |
+|------|------|
+| `maimai_player_overview` | 玩家概览：B50 图/数据，并可附带上分推荐 JSON（不必当作每条消息的默认动作） |
+| `maimai_push_plan` | 上分计划：推荐增益谱面，并为第一条推荐曲出谱面图 |
 
-依赖已启动的 **[NapCat](https://github.com/NapNeko/NapCatQQ)**（或其它兼容 OneBot 11 HTTP 的实现），用于：
+只需要上分列表时，优先直接调用 `maimai_rise`。
 
-- 拉取机器人**好友列表**、**所在群**、**各群成员**（QQ / 昵称 / 群名片）
-- 写入本地 `identity_cache.json`
-- 供 `maimai_resolve_qq` 按昵称反查，并减少「把群号当成玩家 QQ」的误用
+### 用户设定（按 QQ 本地存储）
 
-#### 1. NapCat 侧
+设定保存在本地 `user.db`。查分时会自动使用该 QQ 已保存的主题与数据源；**默认水鱼**。仅在用户明确要求切换时再改设定。
 
-1. 安装并登录 [NapCat](https://github.com/NapNeko/NapCatQQ)。  
-2. 开启 **HTTP 服务**（端口自行配置，下文示例 `3000`）。  
-3. 若启用了 Token 鉴权，记下 access token。  
-4. 确认本机可访问：`http://127.0.0.1:3000`（或 Docker 内网地址，如 `http://napcat:3000`）。
+| 工具 | 说明 |
+|------|------|
+| `maimai_user_show` | 查看指定 QQ 的主题与查分源（`service`） |
+| `maimai_user_set_theme` | 设置出图主题：`circle`（默认）或 `prism_plus` |
+| `maimai_user_set_source` | 设置默认查分源：水鱼或落雪 |
+| `maimai_user_bind_lxns` | 获取落雪 OAuth 授权链接，或提交 `code` 完成绑定 |
 
-#### 2. maimai-mcp 配置
+### 可选：身份缓存（需 OneBot / NapCat）
 
-```env
-# 推荐直接用 NapCat 变量名
-NAPCAT_BASE_URL=http://127.0.0.1:3000
-# NAPCAT_ACCESS_TOKEN=你的token
+常规查分请直接传 `params.qq`，不必依赖昵称反查。配置 HTTP API 后可拉取好友 / 群成员到本地缓存。
 
-# 等价写法（二选一即可）
-# ONEBOT_BASE_URL=http://127.0.0.1:3000
-# ONEBOT_ACCESS_TOKEN=
+| 工具 | 说明 |
+|------|------|
+| `maimai_refresh_identity` | 通过 OneBot / NapCat 刷新好友与群成员身份缓存 |
+| `maimai_identity_status` | 查看身份缓存状态 |
+| `maimai_resolve_qq` | 按昵称 / 群名片从缓存反查 QQ |
+| `maimai_get_qq_identity` | 按 QQ 读取缓存中的昵称等信息 |
 
-# 可选：缓存目录（默认仓库下 qq-identity-cache/）
-# QQ_IDENTITY_CACHE_DIR=C:\path\to\qq-identity-cache
-# QQ_IDENTITY_GROUP_DELAY_MS=250
-```
+---
 
-MCP 客户端 `env` 示例：
+## License
 
-```json
-"NAPCAT_BASE_URL": "http://127.0.0.1:3000",
-"NAPCAT_ACCESS_TOKEN": ""
-```
-
-#### 3. 刷新与使用
-
-```text
-maimai_refresh_identity
-  → NapCat: get_friend_list / get_group_list / get_group_member_list
-  → 写入 identity_cache.json
-
-maimai_identity_status    # 查看统计
-maimai_resolve_qq         # 昵称 / 群名片 → 玩家 QQ（给工具参数用）
-maimai_get_qq_identity    # 按 QQ 读缓存昵称
-```
-
-`maimai_refresh_identity` 可选参数：`timeout_ms`、`group_delay_ms`、`max_groups`（测试用）、`base_url`（临时覆盖地址）。
-
-群很多时拉取会较久，属正常现象。对用户回复仍 **不要念出 QQ/群号**（见 [maimai-mcp skill](skills/maimai-mcp/SKILL.md)）。
-
-### 曲库与孤儿成绩
-
-落雪全量成绩中可能含本地曲库没有的谱面。转换时会 **跳过并打日志**，避免整次查询 `KeyError`。请定期：
-
-```bash
-# MCP: maimai_update_catalog  what=["music","alias","tables"]
-python -m maimai_mcp.cli update music
-python -m maimai_mcp.cli update tables
-```
-
-## Agent / 宿主集成
-
-1. 配置 MCP：`python -m maimai_mcp`（见上文配置示例）。  
-2. 调用规则 skill：[`skills/maimai-mcp/`](skills/maimai-mcp/)（`SKILL.md` + `references/tools.md`，中文）。  
-   宿主将 skill 纳入系统提示或 skill 加载路径即可。  
-3. **仅在用户明确查舞萌相关内容时** 调用 `maimai_*`；勿在无关对话里乱调查分。  
-4. **用户可见文本不得出现 QQ 号 / 群号**；身份数字仅作工具参数。  
-5. 更稳妥：宿主在工具参数中注入玩家 `user_id` 作为 `params.qq`，避免模型猜号。
-
-## 数据源说明
-
-| 源 | 用途 |
-|----|------|
-| Diving-Fish 水鱼 | 默认成绩源、曲库、排名 |
-| Lxns 落雪 | 用户可切换的成绩源、曲库合并、OAuth |
-| Yuzu 柚子 | 别名 |
-| NapCat | 身份缓存：好友/群/群成员 HTTP 拉取 |
-
-本地用户偏好（主题、数据源、落雪 token）存在 `static/data/user.db`。
+- 本仓库代码：**[BSD-2-Clause](LICENSE)**
+- 参考自 [maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX) 的部分：**MIT**（见 LICENSE 附录）
+- `static` 等美术 / 字体资源**不随包分发**，版权以资源包与官方声明为准，不在本许可范围内
 
 ## 致谢
 
 - [Yuri-YuzuChaN/maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX) — 绘图与业务参考  
 - [Diving-Fish 查分器](https://www.diving-fish.com/maimaidx/prober/)  
 - [落雪查分器](https://maimai.lxns.net/)  
-- [柚子别名](https://www.yuzuchan.moe/)  
-- [NapCat](https://github.com/NapNeko/NapCatQQ) — 身份缓存数据源（HTTP）  
-
-## 发布（维护者）
-
-版本号在 `pyproject.toml` 与 `maimai_mcp/__init__.py` 中保持一致。打 tag 后 GitHub Actions 会构建、创建 [Release](https://github.com/antinomie1/maimai-mcp/releases) 并上传 PyPI。
-
-```bash
-# 1. 改版本号并提交
-# 2. 推送 main 后打 tag：
-git tag v0.1.1
-git push origin v0.1.1
-```
-
-**PyPI Trusted Publisher**（只需配置一次，无需 API token）：
-
-1. 仓库 Settings → Environments → 新建环境名 **`pypi`**
-2. https://pypi.org/manage/project/maimai-mcp/settings/publishing/ → Add a new publisher  
-   - Owner: `antinomie1`  
-   - Repository: `maimai-mcp`  
-   - Workflow name: `release.yml`  
-   - Environment name: `pypi`
-
-之后每次推送 `v*` tag 即可发版；已存在版本会 `skip-existing` 跳过。
-
-## License
-
-见 [LICENSE](LICENSE)（BSD-2-Clause）。静态资源版权以 maimaiDX / 官方素材声明为准。
+- [柚子别名](https://www.yuzuchan.moe/)
