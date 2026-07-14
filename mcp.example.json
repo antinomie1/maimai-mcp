@@ -1,13 +1,10 @@
 {
   "mcpServers": {
     "maimai": {
-      "command": "python",
-      "args": ["-m", "maimai_mcp"],
-      "cwd": "C:\\path\\to\\maimai-mcp",
+      "command": "maimai-mcp",
       "env": {
-        "PYTHONPATH": "C:\\path\\to\\maimai-mcp",
-        "MAIMAIDX_PATH": "C:\\path\\to\\maimai-mcp\\static",
-        "OUTPUT_DIR": "C:\\path\\to\\maimai-mcp\\output",
+        "MAIMAIDX_PATH": "C:\\path\\to\\static",
+        "OUTPUT_DIR": "C:\\path\\to\\output",
         "MAIMAIDX_ALIAS_PROXY": "false",
         "SAVE_IN_MEMORY": "true",
         "ASSETS_ONLINE": "true",

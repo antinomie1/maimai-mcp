@@ -38,18 +38,41 @@ mcp.example.json      MCP 客户端配置示例
 
 ## 安装
 
+要求 **Python ≥ 3.10**。包名：[`maimai-mcp`](https://pypi.org/project/maimai-mcp/)（import 名 `maimai_mcp`）。  
+GitHub Release：https://github.com/antinomie1/maimai-mcp/releases
+
+> **静态资源不随 PyPI 包分发**（体积约数百 MB）。请单独下载资源包，并通过 `MAIMAIDX_PATH` 指向其中的 `static` 目录。
+
+### 从 PyPI 安装（推荐）
+
+```bash
+pip install maimai-mcp
+# ginfo 饼图需要：
+# playwright install chromium
+```
+
+安装后可用入口：
+
+| 命令 | 说明 |
+|------|------|
+| `maimai` | CLI |
+| `maimai-mcp` | MCP stdio 服务 |
+| `python -m maimai_mcp` | 同上（MCP） |
+| `python -m maimai_mcp.cli ...` | CLI 子命令 |
+
+环境变量请写在 **MCP 客户端配置的 `env`**，或系统/用户环境中（见下方）。`pip install` 后不建议在 site-packages 里写 `.env`。
+
+### 从源码开发安装
+
 ```bash
 git clone https://github.com/antinomie1/maimai-mcp.git
 cd maimai-mcp
 pip install -e .
-# ginfo 饼图需要：
 # playwright install chromium
 
 cp maimai_mcp/.env.example maimai_mcp/.env
 # 编辑 maimai_mcp/.env，至少填写 MAIMAIDX_PATH
 ```
-
-要求 **Python ≥ 3.10**。
 
 ### 静态资源
 
@@ -61,7 +84,8 @@ cp maimai_mcp/.env.example maimai_mcp/.env
 请遵守上游美术相关声明。首次使用表类指令前建议生成表图：
 
 ```bash
-python -m maimai_mcp.cli update tables
+maimai update tables
+# 或：python -m maimai_mcp.cli update tables
 ```
 
 ## 环境变量
@@ -138,26 +162,24 @@ python -m maimai_mcp
 
 ### 客户端配置
 
-复制并修改 [`mcp.example.json`](mcp.example.json)（路径改成你的机器）。密钥优先写在 `maimai_mcp/.env`：
+**PyPI 安装后**（推荐）：用入口脚本，不必设置 `cwd` / `PYTHONPATH`：
 
 ```json
 {
   "mcpServers": {
     "maimai": {
-      "command": "python",
-      "args": ["-m", "maimai_mcp"],
-      "cwd": "/path/to/maimai-mcp",
+      "command": "maimai-mcp",
       "env": {
-        "PYTHONPATH": "/path/to/maimai-mcp",
-        "MAIMAIDX_PATH": "/path/to/maimai-mcp/static",
-        "OUTPUT_DIR": "/path/to/maimai-mcp/output"
+        "MAIMAIDX_PATH": "/path/to/static",
+        "OUTPUT_DIR": "/path/to/output",
+        "DIVINGFISH_TOKEN": ""
       }
     }
   }
 }
 ```
 
-本地私有配置可用 `mcp.json`（已 gitignore）。
+**源码 / 可编辑安装**时可参考 [`mcp.example.json`](mcp.example.json)；密钥也可写在 `maimai_mcp/.env`。本地私有配置可用 `mcp.json`（已 gitignore）。
 
 ### 联调
 
@@ -305,6 +327,27 @@ python -m maimai_mcp.cli update tables
 - [柚子别名](https://www.yuzuchan.moe/)  
 - [NapCat](https://github.com/NapNeko/NapCatQQ) — 身份缓存数据源（HTTP）  
 
+## 发布（维护者）
+
+版本号在 `pyproject.toml` 与 `maimai_mcp/__init__.py` 中保持一致。打 tag 后 GitHub Actions 会构建、创建 [Release](https://github.com/antinomie1/maimai-mcp/releases) 并上传 PyPI。
+
+```bash
+# 1. 改版本号并提交
+# 2. 推送 main 后打 tag：
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+**PyPI Trusted Publisher**（只需配置一次，无需 API token）：
+
+1. 仓库 Settings → Environments → 新建环境名 **`pypi`**
+2. https://pypi.org/manage/project/maimai-mcp/settings/publishing/ → Add a new publisher  
+   - Owner: `antinomie1`  
+   - Repository: `maimai-mcp`  
+   - Workflow name: `release.yml`  
+   - Environment name: `pypi`
+
+之后每次推送 `v*` tag 即可发版；已存在版本会 `skip-existing` 跳过。
 
 ## License
 

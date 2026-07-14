@@ -1,0 +1,17 @@
+include LICENSE
+include README.md
+include mcp.example.json
+include pyproject.toml
+include maimai_mcp/.env.example
+
+recursive-exclude * __pycache__
+recursive-exclude * *.py[cod]
+recursive-exclude * .env
+global-exclude *.pyc *.pyo *.pyd
+
+prune maimai_mcp/logs
+prune output
+prune static
+prune qq-identity-cache
+prune mcps
+prune .git
