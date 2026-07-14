@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ...core.domain.chart import resolve_song
 from ...core.errors import handle_errors
 from ...core.merge.models import Song
 from ...core.service import mai
@@ -15,6 +16,17 @@ def _is_float(value: str) -> bool:
         return False
 
 
+def _search_by_title_or_alias(query: str) -> list[Song]:
+    """id / exact title / alias first; fuzzy title substring only as fallback."""
+    key = (query or "").strip()
+    if not key:
+        return []
+    resolved = resolve_song(key)
+    if resolved is not None:
+        return resolved if isinstance(resolved, list) else [resolved]
+    return list(mai.total_list.filter(title=key))
+
+
 @handle_errors
 async def query_search(
     args: str,
@@ -23,7 +35,7 @@ async def query_search(
     page: int = 1,
 ) -> tuple[list[Song], int]:
     """
-    mode: 定数 | bpm | 曲师 | 谱师 | None(标题模糊)
+    mode: 定数 | bpm | 曲师 | 谱师 | None(标题：别名/精确优先，否则模糊)
     """
     a_list = args.split() if args else []
     songs: list[Song] = []
@@ -47,6 +59,6 @@ async def query_search(
     elif mode == "谱师" and a_list:
         songs = mai.total_list.filter(charter=" ".join(a_list))
     else:
-        songs = list(mai.total_list.filter(title=args))
+        songs = _search_by_title_or_alias(args)
 
     return songs, page

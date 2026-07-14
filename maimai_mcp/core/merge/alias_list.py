@@ -14,8 +14,12 @@ class AliasList(RootModel):
         return alias_music
 
     def by_alias(self, music_alias: str) -> list[Alias]:
+        """Exact alias match (case-insensitive)."""
+        key = music_alias.strip().lower()
+        if not key:
+            return []
         alias_list = []
         for music in self.root:
-            if music_alias in music.alias:
+            if any(key == (a or "").strip().lower() for a in music.alias):
                 alias_list.append(music)
         return alias_list

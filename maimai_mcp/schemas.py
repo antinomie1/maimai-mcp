@@ -16,14 +16,14 @@ class StrictModel(BaseModel):
 
 
 class PlayerArgs(StrictModel):
-    """Player identity: QQ and/or Diving-Fish username (session defaults fill gaps)."""
+    """Player identity: QQ and/or Diving-Fish username."""
 
     qq: int | None = Field(
         default=None,
         description=(
             "Player QQ (sender or target). NEVER put group id here. "
-            "Falls back to session after maimai_set_identity / prior tool with qq. "
-            "Chat context is NOT auto-injected."
+            "Pass every call; chat context is NOT auto-injected. "
+            "CLI may use DEFAULT_QQ when omitted."
         ),
         ge=1,
     )
@@ -47,20 +47,6 @@ class ImageOutArgs(StrictModel):
         default=None,
         description="Optional output PNG path or directory.",
         max_length=512,
-    )
-
-
-class IdentityInput(StrictModel):
-    qq: int | None = Field(
-        default=None,
-        ge=1,
-        description="Player QQ (sender or query target). Not group id.",
-    )
-    username: str | None = Field(default=None, max_length=64)
-    group_id: int | None = Field(
-        default=None,
-        ge=1,
-        description="Current group id for context only; never used as player qq.",
     )
 
 

@@ -13,13 +13,13 @@
 | 成绩 | 水鱼 / 落雪 B50、单曲成绩、等级/定数分数列表 |
 | 进度 | 牌子完成表、定数表、等级进度、上分推荐 |
 | 其它 | 排名、今日运势、曲目全服统计（ginfo） |
-| 会话 | `maimai_set_identity`（玩家 QQ + 群号分离）、session 粘性 |
+| 用户设定 | 按 QQ 存主题 / 默认查分器 / 落雪 token（`user.db`） |
 | 身份缓存 | 经 **NapCat** HTTP API 拉取好友/群成员 → `identity_cache.json`，昵称反查 QQ |
 
 默认主题 **circle**；需要 `prism_plus` 时再切换。  
 **水鱼**为主路径；**落雪**可选（需 Token / OAuth 绑定）。
 
-> **重要：** MCP **不会**自动读取聊天上下文里的 QQ。Agent 必须显式传 `qq`，或先 `maimai_set_identity`。  
+> **重要：** MCP **不会**自动读取聊天上下文里的 QQ。Agent **每次**查分须在 `params` 中显式传 `qq`（或 `username`）。  
 > **禁止把群号填进 `qq`**（例如会话 `GroupMessage:用户QQ_群号` 中，第二段是群号）。
 
 ## 目录结构
@@ -170,13 +170,11 @@ python scripts/smoke_mcp_tools.py --username <水鱼用户名>
 
 ### 主要 Tools
 
-参数一般包在 `params` 对象中。查分类工具支持 `qq` / `username`（session 可补全）。
+参数一般包在 `params` 对象中。查分类工具 **每次**传 `qq` / `username`（无 session 粘性补全）。
 
 | 工具 | 说明 |
 |------|------|
-| **会话 / 身份** | |
-| `maimai_set_identity` | 设置本进程 `qq`、`username`、**`group_id`（仅上下文，不作查分 QQ）** |
-| `maimai_get_session` | 查看 session（含 `group_id`） |
+| **昵称身份缓存（高级）** | |
 | `maimai_refresh_identity` | 经 **NapCat** 拉取好友/群/成员并写入身份缓存 |
 | `maimai_identity_status` | 身份缓存路径与统计 |
 | `maimai_resolve_qq` | 昵称/群名片反查 QQ（依赖缓存） |
@@ -207,27 +205,13 @@ python scripts/smoke_mcp_tools.py --username <水鱼用户名>
 | `maimai_push_plan` | 上分计划串联 |
 | `maimai_fortune` | 今日运势 |
 
-### 会话与身份（Agent 必读）
+### 玩家身份（Agent 必读）
 
 1. **仅当用户意图是舞萌查分/查歌/进度等时** 才调用 `maimai_*`；闲聊、发消息失败、`stop` 等 **不要** 调 MCP。  
-2. **玩家 QQ** 与 **群号** 分离：  
-   - `qq` = 发送者或被查对象  
-   - `group_id` = 当前群（可选，**绝不**当查分 QQ）
-3. **真正查分前**（本进程尚未设置时）可：
-
-   ```json
-   {
-     "params": {
-       "qq": "<发送者QQ>",
-       "group_id": "<当前群号>"
-     }
-   }
-   ```
-
-   之后同 MCP 进程内可省略 `qq`（粘性 session）。**重启 MCP 后需重新 set。**  
-   不要每条消息无条件 `maimai_set_identity`。
-4. 若 `qq == group_id`，或缓存里该 id 仅是「群」不是「用户」，工具会 **校验失败**。失败时 **不要** 对调 `qq`/`group_id` 碰运气，也 **不要** 对错误 id 改主题/数据源。
-5. 会话 `...:<用户QQ>_<群号>`：后半段是群号。宿主日志 `昵称/数字` **勿默认当玩家 QQ**，以 OneBot `user_id` / `group_id` 为准。
+2. **每次**在 `params` 中传玩家 `qq`（发送者或被 @）或 `username`；**禁止**把群号填进 `qq`。  
+3. 主题 / 默认查分器按该 `qq` 存在 `user.db`，带对 qq 即自动生效；**仅用户明确要求**时再改设定。  
+4. 若工具提示像是群号：改用正确玩家 id，**不要**对调字段碰运气，也 **不要** 对错误 id 改主题/数据源。  
+5. 会话 `...:<用户QQ>_<群号>`：后半段是群号。宿主日志 `昵称/数字` **勿默认当玩家 QQ**，以 OneBot `user_id` 为准。
 
 完整调用规则见 skill：**[`skills/maimai-mcp/SKILL.md`](skills/maimai-mcp/SKILL.md)**。
 
@@ -300,9 +284,9 @@ python -m maimai_mcp.cli update tables
 1. 配置 MCP：`python -m maimai_mcp`（见上文配置示例）。  
 2. 调用规则 skill：[`skills/maimai-mcp/`](skills/maimai-mcp/)（`SKILL.md` + `references/tools.md`，中文）。  
    宿主将 skill 纳入系统提示或 skill 加载路径即可。  
-3. **仅在用户明确查舞萌相关内容时** 调用 `maimai_*`；勿在无关对话里 set_identity / 查分。  
+3. **仅在用户明确查舞萌相关内容时** 调用 `maimai_*`；勿在无关对话里乱调查分。  
 4. **用户可见文本不得出现 QQ 号 / 群号**；身份数字仅作工具参数。  
-5. 更稳妥：宿主在**真正查分请求前**注入玩家 `user_id`（或调用 `maimai_set_identity`），避免模型猜号。
+5. 更稳妥：宿主在工具参数中注入玩家 `user_id` 作为 `params.qq`，避免模型猜号。
 
 ## 数据源说明
 

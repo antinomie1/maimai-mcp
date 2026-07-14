@@ -58,7 +58,7 @@ async def resolve_user(
     if qqid is None:
         raise ValidationError(
             "未指定玩家 QQ。请传 qq（发送者/被查对象，不是群号），"
-            "或先 maimai_set_identity，或配置 DEFAULT_QQ；也可用 username。"
+            "或配置 DEFAULT_QQ（CLI）；也可用 username。"
         )
 
     try:

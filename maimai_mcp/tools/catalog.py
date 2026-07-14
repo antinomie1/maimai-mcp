@@ -14,9 +14,8 @@ from maimai_mcp.features.search_song.draw import draw_search_result
 from maimai_mcp.features.search_song.query import query_search
 from maimai_mcp.result import FeatureResult
 
-from ..context import session
 from ..formatters import result_to_json
-from ..runtime import ensure_ready, run_fr, with_session_player
+from ..runtime import ensure_ready, run_fr, normalize_player
 from ..schemas import (
     AliasAddInput,
     AliasQueryInput,
@@ -30,10 +29,9 @@ from ..schemas import (
 
 async def search_impl(params: SearchInput) -> FeatureResult:
     await ensure_ready()
-    params = with_session_player(params)
+    params = normalize_player(params)
     mode = None if params.mode == "标题" else params.mode
     songs, page = await query_search(params.query, mode=mode, page=params.page)
-    session.last_song_ids = [s.song_id for s in songs[:50]]
     if params.format == "json" and not params.out:
         return FeatureResult.success(
             data=[{"song_id": s.song_id, "song_name": s.song_name} for s in songs]
@@ -49,11 +47,10 @@ async def search_impl(params: SearchInput) -> FeatureResult:
 
 async def chart_impl(params: ChartInput) -> FeatureResult:
     await ensure_ready()
-    params = with_session_player(params)
+    params = normalize_player(params)
     song, ctx, _ = await query_chart_info(
         params.song, params.qq, username=params.username
     )
-    session.last_song_ids = [song.song_id]
     if params.format == "json" and not params.out:
         theme = ctx.get("theme")
         return FeatureResult.success(
@@ -145,7 +142,7 @@ def register(mcp: FastMCP) -> None:
                 chart_type=params.chart_type,
                 color=params.color,
             )
-            p = with_session_player(params)
+            p = normalize_player(params)
             return await chart_impl(
                 ChartInput(
                     song=str(song.song_id),

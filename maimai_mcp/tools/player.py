@@ -20,7 +20,7 @@ from maimai_mcp.features.rise_score.query import query_rise_score
 from maimai_mcp.result import FeatureResult
 
 from ..formatters import result_to_json
-from ..runtime import ensure_ready, run_fr, with_session_player
+from ..runtime import ensure_ready, run_fr, normalize_player
 from ..schemas import (
     B50Input,
     FortuneInput,
@@ -33,7 +33,7 @@ from ..schemas import (
 
 async def b50_impl(params: B50Input) -> FeatureResult:
     await ensure_ready(load_music=True)
-    params = with_session_player(params)
+    params = normalize_player(params)
     user, player, best50, by_name = await query_best50(
         params.qq, username=params.username, all_perfect=params.all_perfect
     )
@@ -53,7 +53,7 @@ async def b50_impl(params: B50Input) -> FeatureResult:
 
 async def minfo_impl(params: SongKeyInput) -> FeatureResult:
     await ensure_ready()
-    params = with_session_player(params)
+    params = normalize_player(params)
     user, song, play_result = await query_play_score(
         params.song, params.qq, username=params.username
     )
@@ -66,7 +66,7 @@ async def minfo_impl(params: SongKeyInput) -> FeatureResult:
 
 async def rise_impl(params: RiseInput) -> FeatureResult:
     await ensure_ready()
-    params = with_session_player(params)
+    params = normalize_player(params)
     user, sd, sd_low, dx, dx_low = await query_rise_score(
         qq=params.qq,
         username=params.username,
@@ -148,7 +148,7 @@ def register(mcp: FastMCP) -> None:
 
         async def _go():
             await ensure_ready(load_music=False)
-            p = with_session_player(params)
+            p = normalize_player(params)
             rank_name = p.name or (p.username or "")
             data = await query_ranking(
                 name=rank_name,
@@ -176,7 +176,7 @@ def register(mcp: FastMCP) -> None:
 
         async def _go():
             await ensure_ready()
-            p = with_session_player(params)
+            p = normalize_player(params)
             text, song = await query_fortune(p.qq, username=p.username)
             if p.format == "json":
                 return FeatureResult.success(
@@ -204,7 +204,7 @@ def register(mcp: FastMCP) -> None:
 
         async def _go():
             await ensure_ready()
-            p = with_session_player(params)
+            p = normalize_player(params)
             song = await query_mai_what(
                 qq=p.qq, username=p.username, rise=p.rise
             )

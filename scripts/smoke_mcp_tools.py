@@ -32,15 +32,11 @@ async def main() -> int:
     from maimai_mcp.tools.player import b50_impl
     from maimai_mcp.tools.workflow import lookup_song_impl
     from maimai_mcp.schemas import LookupSongInput
-    from maimai_mcp.context import session
 
     names = sorted(mcp._tool_manager._tools.keys())
     print(f"[tools] {len(names)} registered")
     for n in names:
         print(f"  - {n}")
-
-    if args.username:
-        session.set_identity(username=args.username, qq=args.qq)
 
     r = await search_impl(SearchInput(query="14.0", mode="定数", format="json"))
     print(f"[search 定数 14.0] ok={r.ok} count={len(r.data or [])}")

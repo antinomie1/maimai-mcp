@@ -20,7 +20,7 @@ from maimai_mcp.features.rating_table.query import query_rating_table
 from maimai_mcp.result import FeatureResult
 
 from ..formatters import result_to_json
-from ..runtime import ensure_ready, run_fr, with_session_player
+from ..runtime import ensure_ready, run_fr, normalize_player
 from ..schemas import (
     GinfoInput,
     LevelProgressInput,
@@ -32,7 +32,7 @@ from ..schemas import (
 
 async def plate_impl(params: PlateInput) -> FeatureResult:
     await ensure_ready()
-    params = with_session_player(params)
+    params = normalize_player(params)
     user, play_result, ver, version_name, plan = await query_plate(
         params.ver, params.plan, params.qq, username=params.username
     )
@@ -100,7 +100,7 @@ def register(mcp: FastMCP) -> None:
 
         async def _go():
             await ensure_ready()
-            p = with_session_player(params)
+            p = normalize_player(params)
             rating, user, play_result, with_p = await query_rating_table(
                 p.level,
                 qq=p.qq,
@@ -153,7 +153,7 @@ def register(mcp: FastMCP) -> None:
 
         async def _go():
             await ensure_ready()
-            p = with_session_player(params)
+            p = normalize_player(params)
             user, level, plan, cat, page, c, u, n = await query_level_progress(
                 p.level,
                 p.plan,
@@ -185,7 +185,7 @@ def register(mcp: FastMCP) -> None:
 
         async def _go():
             await ensure_ready()
-            p = with_session_player(params)
+            p = normalize_player(params)
             user, rating, page, results = await query_level_score_list(
                 p.rating,
                 qq=p.qq,

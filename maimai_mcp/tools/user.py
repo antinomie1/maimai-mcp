@@ -1,4 +1,4 @@
-"""Session identity and user settings tools."""
+"""User settings and NapCat identity-cache tools."""
 
 from __future__ import annotations
 
@@ -21,14 +21,11 @@ from maimai_mcp.core.qq_identity_store import (
 from maimai_mcp.core.user import resolve_user
 from maimai_mcp.result import FeatureResult
 
-from ..context import session
 from ..formatters import result_to_json
-from ..runtime import ensure_ready, run_fr, with_session_player
+from ..runtime import ensure_ready, guard_qq, run_fr
 from ..schemas import (
     BindInput,
     GetQqIdentityInput,
-    IdentityInput,
-    PlayerArgs,
     RefreshIdentityInput,
     ResolveQqInput,
     SourceInput,
@@ -36,56 +33,7 @@ from ..schemas import (
 )
 
 
-def _qq_from_session(qq: int | None = None) -> int | None:
-    """Resolve qq for user-settings tools (with group-as-qq guard)."""
-    return with_session_player(PlayerArgs(qq=qq)).qq
-
-
 def register(mcp: FastMCP) -> None:
-    @mcp.tool(
-        name="maimai_set_identity",
-        annotations={
-            "title": "Set session player + group context",
-            "readOnlyHint": False,
-            "destructiveHint": False,
-            "idempotentHint": True,
-            "openWorldHint": False,
-        },
-    )
-    async def maimai_set_identity(params: IdentityInput) -> str:
-        """Set player QQ / username and optional group_id for this MCP process.
-
-        group_id is context only (never used as score qq). Call at conversation start:
-        qq=sender_id, group_id=group number.
-        """
-
-        async def _go():
-            try:
-                session.set_identity(
-                    qq=params.qq, username=params.username, group_id=params.group_id
-                )
-            except ValidationError as e:
-                return FeatureResult.failure(e.message, code=e.code)
-            return FeatureResult.success(
-                text="identity updated", data=session.snapshot()
-            )
-
-        return result_to_json(await run_fr(_go()))
-
-    @mcp.tool(
-        name="maimai_get_session",
-        annotations={
-            "title": "Get session state",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
-            "openWorldHint": False,
-        },
-    )
-    async def maimai_get_session() -> str:
-        """Return session defaults: default_qq, group_id, username, last songs."""
-        return result_to_json(FeatureResult.success(data=session.snapshot()))
-
     @mcp.tool(
         name="maimai_refresh_identity",
         annotations={
@@ -163,7 +111,7 @@ def register(mcp: FastMCP) -> None:
         """
         data = resolve_identities(
             params.query,
-            group_id=params.group_id if params.group_id is not None else session.group_id,
+            group_id=params.group_id,
             max_results=params.max_results,
         )
         n = len(data.get("matches") or [])
@@ -187,10 +135,7 @@ def register(mcp: FastMCP) -> None:
     )
     async def maimai_get_qq_identity(params: GetQqIdentityInput) -> str:
         """Read nickname / group card for a QQ from identity cache if present."""
-        ident = get_identity(
-            params.qq,
-            params.group_id if params.group_id is not None else session.group_id,
-        )
+        ident = get_identity(params.qq, params.group_id)
         if not ident:
             return result_to_json(
                 FeatureResult.success(
@@ -217,11 +162,14 @@ def register(mcp: FastMCP) -> None:
         },
     )
     async def maimai_user_show(qq: int | None = None) -> str:
-        """Show theme/service for a QQ (session default if omitted)."""
+        """Show theme/service for a QQ (DEFAULT_QQ if omitted)."""
 
         async def _go():
             await ensure_ready(load_music=False)
-            user = await resolve_user(_qq_from_session(qq))
+            try:
+                user = await resolve_user(guard_qq(qq))
+            except ValidationError as e:
+                return FeatureResult.failure(e.message, code=e.code)
             return FeatureResult.success(
                 text=f"QQ={user.qqid} service={user.service.value} theme={user.theme.value}",
                 data={
@@ -253,7 +201,10 @@ def register(mcp: FastMCP) -> None:
                 return FeatureResult.failure(
                     f"unknown theme:\n{Theme.get_help()}", code="validation_error"
                 )
-            user = await resolve_user(_qq_from_session(params.qq))
+            try:
+                user = await resolve_user(guard_qq(params.qq))
+            except ValidationError as e:
+                return FeatureResult.failure(e.message, code=e.code)
             await update_user(user.qqid, theme=theme)
             return FeatureResult.success(text=f"theme={theme.value}")
 
@@ -280,7 +231,10 @@ def register(mcp: FastMCP) -> None:
                     f"unknown source:\n{ServiceName.get_help()}",
                     code="validation_error",
                 )
-            user = await resolve_user(_qq_from_session(params.qq))
+            try:
+                user = await resolve_user(guard_qq(params.qq))
+            except ValidationError as e:
+                return FeatureResult.failure(e.message, code=e.code)
             await update_user(user.qqid, service=source)
             return FeatureResult.success(text=f"source={source.value}")
 
@@ -318,7 +272,10 @@ def register(mcp: FastMCP) -> None:
                     ).strip(),
                     data={"authorize_url": url},
                 )
-            user = await resolve_user(_qq_from_session(params.qq))
+            try:
+                user = await resolve_user(guard_qq(params.qq))
+            except ValidationError as e:
+                return FeatureResult.failure(e.message, code=e.code)
             msg = await bind_lxns(user, params.code)
             return FeatureResult.success(text=msg)
 
