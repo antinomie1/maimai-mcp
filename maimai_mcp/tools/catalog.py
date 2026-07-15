@@ -49,7 +49,10 @@ async def chart_impl(params: ChartInput) -> FeatureResult:
     await ensure_ready()
     params = normalize_player(params)
     song, ctx, _ = await query_chart_info(
-        params.song, params.qq, username=params.username
+        params.song,
+        params.qq,
+        username=params.username,
+        source=params.source,
     )
     if params.format == "json" and not params.out:
         theme = ctx.get("theme")

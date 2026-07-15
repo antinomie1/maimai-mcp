@@ -33,7 +33,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--plate-only", action="store_true", help="tables 时只更完成表")
 
     # --- user ---
-    p = sub.add_parser("user", help="用户设置 / 落雪绑定")
+    p = sub.add_parser("user", help="用户设置 / 落雪绑定 / 水鱼 Import-Token")
     us = p.add_subparsers(dest="user_cmd", required=True)
     us.add_parser("show", help="显示当前用户设置").add_argument("--qq", type=int)
     sp = us.add_parser("source", help="切换数据源")
@@ -45,6 +45,44 @@ def _build_parser() -> argparse.ArgumentParser:
     bp = us.add_parser("bind", help="落雪授权")
     bp.add_argument("--qq", type=int)
     bp.add_argument("--code", default=None, help="授权码；省略则打印授权 URL")
+    bip = us.add_parser("bind-import", help="绑定水鱼成绩导入 Import-Token")
+    bip.add_argument("--qq", type=int, required=True)
+    bip.add_argument("--token", required=True, help="Diving-Fish Import-Token")
+
+    # --- records (official dump → convert → upload) ---
+    p = sub.add_parser("records", help="官服成绩导出并上传水鱼")
+    rs = p.add_subparsers(dest="records_cmd", required=True)
+    ru = rs.add_parser("update", help="扫码 dump → convert → 上传水鱼/落雪")
+    ru.add_argument("--qq", type=int, required=True)
+    ru.add_argument("--qr-content", required=True, help="二维码解析串（SGWC...）")
+    ru.add_argument("--keyship", default=None)
+    ru.add_argument("--logoutid", type=int, choices=(1, 2), default=None)
+    ru.add_argument("--title-ver", default=None)
+    ru.add_argument("--timeout", type=float, default=240.0)
+    ru.add_argument("--output-dir", default=None)
+    ru.add_argument(
+        "--source",
+        "--target",
+        dest="source",
+        required=True,
+        choices=("divingfish", "lxns", "both"),
+        help="必填数据源：divingfish(水鱼) / lxns(落雪) / both(两者)",
+    )
+    ru.add_argument(
+        "--refresh-music",
+        action="store_true",
+        help="强制刷新水鱼 music_data 缓存后再 convert（仅 divingfish）",
+    )
+    rc = rs.add_parser("convert", help="仅将官服 raw JSON 转为水鱼载荷")
+    rc.add_argument("input", help="含 GetUserMusicApi 的 raw JSON")
+    rc.add_argument("-o", "--output", default=None)
+    rc.add_argument("--report", default=None)
+    rc.add_argument("--pretty", action="store_true")
+    rc.add_argument(
+        "--music-data",
+        default=None,
+        help="水鱼 music_data.json 路径（默认 MAIMAIDX_PATH/data/music_data.json）",
+    )
 
     # Common flags live on the root parser (--quiet / via parse_intermixed).
     # Subcommands use with_quiet=False so root --quiet is never overwritten.
@@ -91,6 +129,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("b50", help="Best50 / AP50（支持 --qq 或 --username）")
     _common(p)
     p.add_argument("--ap", action="store_true", help="AP50（仅落雪 + --qq）")
+    p.add_argument(
+        "--source",
+        default=None,
+        help="本次查询数据源覆盖：水鱼/divingfish 或 落雪/lxns（不改本地默认设定）",
+    )
 
     p = sub.add_parser("minfo", help="单曲成绩")
     _common(p)
@@ -191,14 +234,12 @@ async def _dispatch(args: argparse.Namespace) -> FeatureResult:
         from textwrap import dedent
 
         if args.user_cmd == "show":
+            from .tools.user import _user_settings_payload, _user_settings_text
+
             user = await resolve_user(args.qq)
             return FeatureResult.success(
-                text=f"QQ={user.qqid} service={user.service.value} theme={user.theme.value}",
-                data={
-                    "qq": user.qqid,
-                    "service": user.service.value,
-                    "theme": user.theme.value,
-                },
+                text=_user_settings_text(user),
+                data=_user_settings_payload(user),
             )
         if args.user_cmd == "source":
             source = ServiceName.get_by_index(args.value)
@@ -239,6 +280,64 @@ async def _dispatch(args: argparse.Namespace) -> FeatureResult:
             user = await resolve_user(args.qq)
             msg = await bind_lxns(user, args.code)
             return FeatureResult.success(text=msg)
+        if args.user_cmd == "bind-import":
+            from .core.official.workflow import WorkflowError, bind_import_token
+
+            try:
+                result = await bind_import_token(args.qq, args.token)
+            except WorkflowError as e:
+                return FeatureResult.failure(str(e), code="workflow_error")
+            return FeatureResult.success(
+                text=result["text"],
+                data={
+                    "qq": result["qq"],
+                    "import_token_bound": True,
+                    "import_token_preview": result["import_token_preview"],
+                },
+            )
+
+    # ---- records (official → Diving-Fish) ----
+    if cmd == "records":
+        await bootstrap(load_music=False, quiet=quiet)
+        if args.records_cmd == "convert":
+            from pathlib import Path
+
+            from .core.official.convert import convert_file
+
+            try:
+                payload, report = convert_file(
+                    Path(args.input),
+                    output=Path(args.output) if args.output else None,
+                    report=Path(args.report) if args.report else None,
+                    pretty=args.pretty,
+                    music_data=Path(args.music_data) if args.music_data else None,
+                )
+            except Exception as e:  # noqa: BLE001
+                return FeatureResult.failure(str(e), code="convert_error")
+            return FeatureResult.success(
+                text=f"转换完成：{report.get('converted')} 条，跳过 {report.get('skipped')} 条",
+                data=report if args.output else {"converted": len(payload), "report": report},
+            )
+        if args.records_cmd == "update":
+            from pathlib import Path
+
+            from .core.official.workflow import WorkflowError, update_records_workflow
+
+            try:
+                result = await update_records_workflow(
+                    qq=args.qq,
+                    qr_content=args.qr_content,
+                    keyship=args.keyship,
+                    logoutid=args.logoutid,
+                    title_ver=args.title_ver,
+                    timeout=args.timeout,
+                    output_dir=Path(args.output_dir) if args.output_dir else None,
+                    refresh_music=bool(args.refresh_music),
+                    source=args.source,
+                )
+            except WorkflowError as e:
+                return FeatureResult.failure(str(e), code="workflow_error")
+            return FeatureResult.success(text=result["text"], data=result)
 
     # ---- features needing catalog ----
     await bootstrap(load_music=True, quiet=quiet)
@@ -338,13 +437,17 @@ async def _dispatch(args: argparse.Namespace) -> FeatureResult:
         from .features.best50.query import query_best50
 
         user, player, best50, by_name = await query_best50(
-            args.qq, username=getattr(args, "username", None), all_perfect=args.ap
+            args.qq,
+            username=getattr(args, "username", None),
+            all_perfect=args.ap,
+            source=getattr(args, "source", None),
         )
         if args.format == "json" and not args.out:
             return FeatureResult.success(
                 data={
                     "qq": user.qqid,
                     "username": getattr(args, "username", None),
+                    "service": user.service.value,
                     "player": player,
                     "best50": best50,
                 }

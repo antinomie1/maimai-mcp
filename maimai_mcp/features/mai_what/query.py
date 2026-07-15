@@ -15,11 +15,14 @@ async def query_mai_what(
     qq: int | None = None,
     username: str | None = None,
     rise: bool = False,
+    source: str | None = None,
 ) -> Song:
     song = mai.total_list.random()
     if rise:
         try:
-            ref = await resolve_player(qq, username, require_lxns_auth=False)
+            ref = await resolve_player(
+                qq, username, require_lxns_auth=False, source=source
+            )
             if ref is not None:
                 picked = await get_mai_what_song(
                     ref.user, username=ref.username

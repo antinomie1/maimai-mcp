@@ -92,11 +92,37 @@ class PlayerBest50(ScoreBaseImage):
         idx = bisect_right(thresholds, self.player.rating) - 1
         return f"UI_CMN_DXRating_Star_0{num_map[idx]}.png"
 
+    _DEFAULT_PLATE = "UI_Plate_550101.png"
+    _DEFAULT_ICON = "UI_Icon_509506.png"
+
     async def _fetch_image(self, type: str, file_name: int) -> BytesIO | Path | None:
         file = f"UI_{type.capitalize()}_{str(file_name).zfill(6)}.png"
         if not maiconfig.assets_online:
-            return static / "mai" / type / file
+            path = static / "mai" / type / file
+            return path if path.is_file() else None
         return await online_assets(f"/{type}/{file}")
+
+    async def _resolve_plate(self) -> Path | BytesIO:
+        default = pic_dir / self._DEFAULT_PLATE
+        if not self.player.name_plate:
+            return default
+        if isinstance(self.player.name_plate, Collection):
+            fetched = await self._fetch_image("plate", self.player.name_plate.id)
+            return fetched if fetched is not None else default
+        path = plate_version_dir / f"{self.player.name_plate}.png"
+        return path if path.is_file() else default
+
+    async def _resolve_icon(self) -> Path | BytesIO:
+        default = pic_dir / self._DEFAULT_ICON
+        if self.player.icon:
+            fetched = await self._fetch_image("icon", self.player.icon.id)
+            if fetched is not None:
+                return fetched
+        if self.qqid:
+            logo = await qqlogo(self.qqid)
+            if logo:
+                return BytesIO(logo)
+        return default
 
     async def draw(self) -> Image.Image:
         """
@@ -119,22 +145,11 @@ class PlayerBest50(ScoreBaseImage):
         # logo
         self._im.alpha_composite(logo, (14, 60))
 
-        # plate
-        if not self.player.name_plate:
-            plate_path = pic_dir / "UI_Plate_550101.png"
-        elif isinstance(self.player.name_plate, Collection):
-            plate_path = await self._fetch_image("plate", self.player.name_plate.id)
-        else:
-            plate_path = plate_version_dir / f"{self.player.name_plate}.png"
+        # plate / icon — online assets may fail transiently; never open(None)
+        plate_path = await self._resolve_plate()
         self._im.alpha_composite(Image.open(plate_path).resize((800, 130)), (300, 60))
 
-        # icon
-        if self.player.icon:
-            icon = await self._fetch_image("icon", self.player.icon.id)
-        elif self.qqid:
-            icon = BytesIO(await qqlogo(self.qqid))
-        else:
-            icon = pic_dir / "UI_Icon_509506.png"
+        icon = await self._resolve_icon()
         self._im.alpha_composite(
             Image.open(icon).convert("RGBA").resize((120, 120)), (305, 65)
         )

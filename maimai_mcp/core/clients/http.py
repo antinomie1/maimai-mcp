@@ -43,26 +43,33 @@ class ApiClient(ABC):
 
 
 async def qqlogo(qqid: int | None = None, icon: str | None = None) -> bytes | None:
-    """获取QQ头像"""
-    session = httpx.AsyncClient(timeout=30)
-    if qqid is not None:
-        params = {"b": "qq", "nk": qqid, "s": 100}
-        res = await session.request("GET", "https://q1.qlogo.cn/g", params=params)
-    elif icon is not None:
-        res = await session.request("GET", icon)
-    else:
+    """Fetch QQ avatar bytes; returns None if unavailable."""
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            if qqid is not None:
+                params = {"b": "qq", "nk": qqid, "s": 100}
+                res = await client.get("https://q1.qlogo.cn/g", params=params)
+            elif icon is not None:
+                res = await client.get(icon)
+            else:
+                return None
+            res.raise_for_status()
+            return res.content
+    except Exception:
         return None
-    return res.content
 
 
 async def online_assets(endpoint: str) -> BytesIO | None:
-    """获取资源文件"""
+    """Fetch maimaiDX asset from yuzuchan CDN. Returns None on any failure."""
+    url = f"https://www.yuzuchan.moe/assets/maimaidx{endpoint}"
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                f"https://www.yuzuchan.moe/assets/maimaidx{endpoint}"
-            )
+            resp = await client.get(url)
             resp.raise_for_status()
             return BytesIO(resp.content)
-    except Exception:
+    except Exception as e:
+        # Callers must fall back to defaults; do not raise.
+        from ...config import log
+
+        log.warning(f"online asset failed: {url} ({type(e).__name__}: {e})")
         return None

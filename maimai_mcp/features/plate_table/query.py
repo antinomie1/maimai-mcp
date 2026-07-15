@@ -17,6 +17,7 @@ async def query_plate(
     qq: int | None = None,
     *,
     username: str | None = None,
+    source: str | None = None,
 ) -> tuple[User, list[PlayedResult], str, str, str]:
     ver = PLATE_CN.get(version, version)
     if f"{ver}{plan}" == "真将":
@@ -26,7 +27,10 @@ async def query_plate(
         raise ValidationError(f"无法识别版本「{version}」")
     _version, version_name = mapping
     ref = await resolve_player(
-        qq, username, require_lxns_auth=not bool((username or "").strip())
+        qq,
+        username,
+        require_lxns_auth=not bool((username or "").strip()),
+        source=source,
     )
     assert ref is not None
     play_result = await get_player_result_ref(ref, _version)

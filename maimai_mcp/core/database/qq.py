@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Enum, MetaData
+from sqlalchemy import Column, Enum, MetaData, text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import Field, SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -24,6 +24,8 @@ class User(UserBase, table=True):
     friend_code: int | None = Field(default=None)
     access_token: str | None = Field(default=None)
     refresh_token: str | None = Field(default=None)
+    # Diving-Fish score Import-Token (not developer token)
+    import_token: str | None = Field(default=None)
     service: ServiceName = Field(
         default=ServiceName.DIVINGFISH, sa_column=Column(Enum(ServiceName))
     )
@@ -33,9 +35,21 @@ class User(UserBase, table=True):
 engine = create_async_engine(f"sqlite+aiosqlite:///{str(db)}", echo=False)
 
 
+async def ensure_user_columns() -> None:
+    """Add columns missing on older user.db (create_all does not alter)."""
+    async with engine.begin() as connect:
+        result = await connect.execute(text("PRAGMA table_info(user)"))
+        cols = {row[1] for row in result.fetchall()}
+        if "import_token" not in cols:
+            await connect.execute(
+                text("ALTER TABLE user ADD COLUMN import_token VARCHAR")
+            )
+
+
 async def create_database():
     async with engine.begin() as connect:
         await connect.run_sync(metadata_user.create_all)
+    await ensure_user_columns()
 
 
 async def get_user(qqid: int) -> User:
@@ -55,23 +69,33 @@ async def update_user(
     service: ServiceName | None = None,
     token: OAuth2Token | None = None,
     theme: Theme | None = None,
+    import_token: str | None = None,
+    clear_import_token: bool = False,
 ) -> User:
-    update_data = {
+    update_data: dict = {
         "friend_code": friend_code,
         "service": service,
         "access_token": token.access_token if token else None,
         "refresh_token": token.refresh_token if token else None,
         "theme": theme,
     }
-    update_data = {k: v for k, v in update_data.items() if v is not None}
+    if clear_import_token:
+        update_data["import_token"] = None
+    elif import_token is not None:
+        update_data["import_token"] = import_token
+    # Drop Nones except explicit clear of import_token
+    cleaned = {k: v for k, v in update_data.items() if v is not None}
+    if clear_import_token:
+        cleaned["import_token"] = None
 
     async with AsyncSession(engine) as session:
         statement = select(User).where(User.qqid == qqid)
         result = await session.exec(statement)
         if user := result.first():
-            user.sqlmodel_update(update_data)
+            user.sqlmodel_update(cleaned)
         else:
             user = User(qqid=qqid)
+            user.sqlmodel_update(cleaned)
             session.add(user)
         await session.commit()
         await session.refresh(user)

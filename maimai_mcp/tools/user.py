@@ -11,6 +11,7 @@ from maimai_mcp.core.database.qq import update_user
 from maimai_mcp.core.domain import bind_lxns
 from maimai_mcp.core.errors import ValidationError
 from maimai_mcp.core.merge.models import ServiceName, Theme
+from maimai_mcp.core.official.workflow import mask_secret
 from maimai_mcp.core.qq_identity_store import (
     IdentityRefreshError,
     cache_status,
@@ -31,6 +32,32 @@ from ..schemas import (
     SourceInput,
     ThemeInput,
 )
+
+
+def _user_settings_payload(user) -> dict:
+    bound = bool(user.import_token)
+    preview = mask_secret(user.import_token) if bound else None
+    return {
+        "qq": user.qqid,
+        "service": user.service.value,
+        "theme": user.theme.value,
+        "import_token_bound": bound,
+        "import_token_preview": preview,
+        "lxns_bound": bool(user.access_token or user.refresh_token),
+    }
+
+
+def _user_settings_text(user) -> str:
+    data = _user_settings_payload(user)
+    token_part = (
+        f"import_token=已绑定({data['import_token_preview']})"
+        if data["import_token_bound"]
+        else "import_token=未绑定"
+    )
+    return (
+        f"QQ={user.qqid} service={user.service.value} "
+        f"theme={user.theme.value} {token_part}"
+    )
 
 
 def register(mcp: FastMCP) -> None:
@@ -162,7 +189,7 @@ def register(mcp: FastMCP) -> None:
         },
     )
     async def maimai_user_show(qq: int | None = None) -> str:
-        """Show theme/service for a player QQ (must pass qq)."""
+        """Show theme/service/Import-Token bind status for a player QQ (must pass qq)."""
 
         async def _go():
             await ensure_ready(load_music=False)
@@ -171,12 +198,8 @@ def register(mcp: FastMCP) -> None:
             except ValidationError as e:
                 return FeatureResult.failure(e.message, code=e.code)
             return FeatureResult.success(
-                text=f"QQ={user.qqid} service={user.service.value} theme={user.theme.value}",
-                data={
-                    "qq": user.qqid,
-                    "service": user.service.value,
-                    "theme": user.theme.value,
-                },
+                text=_user_settings_text(user),
+                data=_user_settings_payload(user),
             )
 
         return result_to_json(await run_fr(_go()))

@@ -15,9 +15,13 @@ async def query_play_score(
     qq: int | None = None,
     *,
     username: str | None = None,
+    source: str | None = None,
 ) -> tuple[User, Song, list]:
     ref = await resolve_player(
-        qq, username, require_lxns_auth=not bool((username or "").strip())
+        qq,
+        username,
+        require_lxns_auth=not bool((username or "").strip()),
+        source=source,
     )
     assert ref is not None
     song = resolve_song(song_key)

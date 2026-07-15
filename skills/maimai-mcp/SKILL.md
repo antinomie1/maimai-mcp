@@ -19,6 +19,7 @@ description: >
 | 用户意图 | 是否调用 |
 |----------|----------|
 | b50 / 查分 / 完成表 / 牌子 / 分列表 / 定数表 / 上分 / 搜歌 / 谱面 / 运势 / 今日舞萌 | 是 |
+| 上传成绩 / 导分 / 官服扫码 / Import-Token 绑定 | 是（仅用户明确要求） |
 | stop、闲聊、编码、修 bot、发消息超时 | 否 |
 | 「为什么不发图」且上一轮已有 `image_path` | 否（直接补发该图片，不要重查） |
 
@@ -34,8 +35,7 @@ MCP **不会**读聊天上下文。参数必须包在 **`params` 对象**里；*
 - 并行多个 `maimai_*`
 - 用机器人自身 QQ 当 `params.qq`
 - 出图成功后只回文字、不发图
-
-可抄模板：
+- **对用户回复里写内部调用细节**（工具名、params、JSON、路径、错误码等）
 
 ```text
 工具: maimai_b50
@@ -45,13 +45,57 @@ MCP **不会**读聊天上下文。参数必须包在 **`params` 对象**里；*
     format: image
 ```
 
+## 数据源（全部成绩查询类 · 必读）
+
+服务端**不做**用户原话文本识别。是否带 `params.source` **由你根据用户意图填写**。
+
+### 哪些工具支持 `params.source`（一次查询覆盖，不写 user.db）
+
+凡带玩家身份、会拉**个人成绩**的查询：
+
+| 工具 | 说明 |
+|------|------|
+| `maimai_b50` | B50 / AP50 |
+| `maimai_minfo` | 单曲成绩 |
+| `maimai_score_list` | 等级/定数分数列表 |
+| `maimai_plate` / `maimai_plate_status` | 牌子完成/进度 |
+| `maimai_rating_table` | 定数表（含个人进度时） |
+| `maimai_level_progress` | 等级进度 |
+| `maimai_rise` | 上分推荐 |
+| `maimai_player_overview` | b50+rise |
+| `maimai_push_plan` | 上分计划 |
+| `maimai_lookup_song` | 搜歌+谱面（含 with_minfo 时） |
+| `maimai_chart` | 谱面信息（含个人推分上下文时） |
+| `maimai_mai_what` | 随机/上分偏向（rise 时） |
+
+**不依赖个人成绩源**（一般不用 `source`）：纯搜歌 `maimai_search`、别名、分数线、运势种子、水鱼公开榜 `maimai_ranking`、曲库更新等。
+
+### 规则
+
+| 用户意图 | 动作 |
+|----------|------|
+| **任意说法**表达「这次用水鱼 / Diving-Fish / df / 不要落雪」 | 查分工具 **必须** `params.source: divingfish`（或 `水鱼`） |
+| **任意说法**表达「这次用落雪 / Lxns」 | **必须** `params.source: lxns`（或 `落雪`） |
+| 只说 b50 / 查分 / 牌子，**未**点名查分器 | **不要**传 `source`，用 QQ 本地默认 |
+| 「切换数据源 / 默认改成水鱼或落雪 / 以后都用…」 | 才用 `maimai_user_set_source` |
+| 一句话里点名了源 + 查询 | **只**查分工具带 `source`，**禁止**先 set_source 再查 |
+
 ```text
-工具: maimai_fortune
+# 「水鱼数据源 b50」「用水鱼看下分列表」「落雪的牌子进度」…
+工具: maimai_b50   # 或 score_list / plate / rise …
 参数:
   params:
-    qq: <发送者 user_id>
+    qq: <发送者>
     format: image
+    source: divingfish   # 或 lxns
 ```
+
+**禁止**：用户已点名数据源，却省略 `source`（会落到 user.db 默认，等于无视用户）。  
+**禁止**：把「水鱼 b50」做成 `maimai_user_set_source` 再 b50。
+
+### 上传成绩（另一套，source 必填）
+
+`maimai_update_records`：`params.source` **必填** `divingfish` | `lxns` | `both`。
 
 ## 查谁（唯一路径）
 
@@ -69,30 +113,14 @@ MCP **不会**读聊天上下文。参数必须包在 **`params` 对象**里；*
 群号 = 绝不进 qq
 ```
 
-从消息详情读取时：
-
-- `发送者: … (3781884259)` → 这才是默认 `qq`
-- 内容里 `@1938546323` 若是本 bot → **不要**当 `qq`
-- 只有 @ 的是**别人**且用户要查「他的」时，才用被 @ 的 id
-
-错误示例（日志里真实踩过）：用户 `@机器人 b50` → 模型传 `qq=机器人号` → 查分失败。  
-正确：同一句应传 `qq=发送者号`。
-
-主题 / 数据源：带对玩家 `qq` 后读该用户本地设定（默认水鱼）；**仅用户明确要求**时再 `maimai_user_set_*`。
+错误示例：用户 `@机器人 b50` → 传 `qq=机器人号`。正确：传发送者号。
 
 ## 出图必须发出去
 
-查分 / 运势 / 谱面 / 表类等出图工具：默认或显式使用 **`format: image`**。  
-工具返回体本身已是 JSON，**不要**为了「拿结构化结果」而传 `format: json`——那会**跳过绘图**，导致没有 `image_path`。
+查分 / 运势 / 谱面 / 表类：默认或显式 **`format: image`**。  
+**勿**为「拿结构」传 `format: json`（会跳过绘图）。
 
-工具成功且返回 **`image_path`** 时：
-
-1. **同一轮回复必须**用宿主发图能力发出该路径（如 `send_message_to_user`，`type: image` + `path`）
-2. 文案可简短（「好了～」），**不要**只贴路径或 JSON
-3. **不要**把 QQ / 本地路径念给用户
-4. 用户问「为什么不发图」：补发上一张 `image_path`，**不要**再调一次 `maimai_*`（除非路径已失效）
-
-没有 `image_path` 且 `ok: false`：用人话说明原因，勿瞎换 qq 重试。
+成功且有 **`image_path`** 时：同一轮必须用宿主发图；用户问「为什么不发图」→ 补发上一张，不要重查。
 
 ## 工具选型
 
@@ -101,32 +129,37 @@ MCP **不会**读聊天上下文。参数必须包在 **`params` 对象**里；*
 | 需求 | 工具 |
 |------|------|
 | B50 | `maimai_b50` |
-| 运势 / 今日舞萌 | `maimai_fortune` |
-| 等级/定数分列表 | `maimai_score_list` |
+| 运势 | `maimai_fortune` |
+| 分列表 | `maimai_score_list` |
 | 牌子 | `maimai_plate` / `maimai_plate_status` |
 | 单曲成绩 | `maimai_minfo` |
-| 搜歌 + 谱面 | `maimai_lookup_song` |
-| 仅上分 | `maimai_rise` |
-| 上分 + 首选谱面 | `maimai_push_plan` |
+| 搜歌+谱面 | `maimai_lookup_song` |
+| 上分 | `maimai_rise` / `maimai_push_plan` |
 | 定数表 / 等级进度 | `maimai_rating_table` / `maimai_level_progress` |
+| 永久切换默认源 | `maimai_user_set_source` |
+| 官服上传 | `maimai_update_records`（`source` 必填） |
 
-## 数据源
+## 对用户回复（必读）
 
-- **默认用水鱼**。未改过设定时，该玩家在库内的数据源就是水鱼。
-- 查分带上玩家 `qq` 后，**以该用户本地设定为准**（`maimai_user_show` 可查看 `service` / 主题）；若用户已切到落雪，则走落雪。
-- **不要**每条消息先 show 再查；不要主动改源。仅当用户明确要求切换 / 绑落雪时，再调 `maimai_user_set_source` / `maimai_user_bind_lxns`。
+**禁止向用户暴露内部调用细节。** 工具名、参数、`params`、JSON、返回字段、路径、耗时、错误码等只用于你侧决策，不要写进对用户的回复。
 
-## 对用户回复
+**不要出现：**
 
-**不要出现：** QQ、群号、工具 JSON、含 QQ 的路径。  
-**可以：** 曲名、难度、分数、rating、FC/AP、牌子名、「你」、**图片本身**。
+- 工具名：`maimai_b50`、`maimai_*`、`send_message_to_user` 等  
+- 参数与结构：`params`、`source`、`format`、`image_path`、`ok`、`code`、完整/片段工具 JSON  
+- 内部路径与标识：本地文件路径、`user.db`、`site-packages`、HTTP 状态码、stacktrace  
+- QQ、群号、机器人号、含 QQ 的路径  
+- 「我调用了…」「参数是…」「工具返回…」类过程说明  
+
+**可以：** 曲名、难度、分数、rating、FC/AP、牌子名、「你」、**图片本身**；失败时用人话简短说明（如「查不到成绩，请确认查分器绑定」）。
+
+出图成功时：发图 + 极短附和即可，不要复述内部文案里的路径或「数据源：…」技术字段（用户若主动问用水鱼还是落雪，可用「水鱼/落雪」口语回答）。
 
 | 情况 | 对人话 |
 |------|--------|
 | 未绑定 / 查无 | 查不到成绩，请确认查分器绑定与隐私设置 |
 | 落雪未授权 | 需要先完成落雪授权绑定 |
-| 把机器人号当玩家 | （应避免；若发生）请用本人账号重试 |
 
 ## 附录【高级·默认跳过】
 
-昵称反查：`maimai_resolve_qq`（需 `maimai_refresh_identity` + NapCat）。有发送者 `user_id` 时直接传，不要先反查。
+昵称反查：`maimai_resolve_qq`（需 `maimai_refresh_identity` + NapCat）。

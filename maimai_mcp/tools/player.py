@@ -35,27 +35,47 @@ async def b50_impl(params: B50Input) -> FeatureResult:
     await ensure_ready(load_music=True)
     params = normalize_player(params)
     user, player, best50, by_name = await query_best50(
-        params.qq, username=params.username, all_perfect=params.all_perfect
+        params.qq,
+        username=params.username,
+        all_perfect=params.all_perfect,
+        source=params.source,
+    )
+    svc_label = (
+        "水鱼"
+        if user.service.value in ("Diving-Fish", "divingfish")
+        else "落雪"
+        if "Lxns" in user.service.value or user.service.value.lower() == "lxns"
+        else user.service.value
     )
     if params.format == "json" and not params.out:
         return FeatureResult.success(
+            text=f"数据源：{svc_label}",
             data={
                 "qq": user.qqid,
                 "username": params.username,
+                "service": user.service.value,
+                "source_label": svc_label,
                 "player": player,
                 "best50": best50,
-            }
+            },
         )
-    return await draw_best50(
+    fr = await draw_best50(
         user, player, best50, is_username=by_name, out=params.out
     )
+    base = fr.text or ""
+    note = f"数据源：{svc_label}"
+    fr.text = f"{note}\n{base}".strip() if base else note
+    return fr
 
 
 async def minfo_impl(params: SongKeyInput) -> FeatureResult:
     await ensure_ready()
     params = normalize_player(params)
     user, song, play_result = await query_play_score(
-        params.song, params.qq, username=params.username
+        params.song,
+        params.qq,
+        username=params.username,
+        source=params.source,
     )
     if params.format == "json" and not params.out:
         return FeatureResult.success(
@@ -72,6 +92,7 @@ async def rise_impl(params: RiseInput) -> FeatureResult:
         username=params.username,
         level=params.level,
         score=params.score,
+        source=params.source,
     )
     if params.format == "json" and not params.out:
         return FeatureResult.success(data={"sd": sd, "dx": dx})
@@ -90,9 +111,11 @@ def register(mcp: FastMCP) -> None:
         },
     )
     async def maimai_b50(params: B50Input) -> str:
-        """Fetch and optionally draw Best50. Use username for Diving-Fish or qq for bound service.
+        """Best50 image/data.
 
-        AP50 requires Lxns + bound QQ (all_perfect=true). Default image theme from local user.
+        params.source: one-shot divingfish/水鱼 or lxns/落雪 (agent maps user intent).
+        Omit → QQ saved default. Do not use set_source for one-shot「水鱼b50」.
+        AP50: all_perfect=true, Lxns only.
         """
         return result_to_json(
             await run_fr(b50_impl(params)),
@@ -110,7 +133,7 @@ def register(mcp: FastMCP) -> None:
         },
     )
     async def maimai_minfo(params: SongKeyInput) -> str:
-        """Personal scores for one song (minfo). Requires player identity."""
+        """Personal scores for one song (minfo). Use params.source for one-shot 水鱼/落雪."""
         return result_to_json(
             await run_fr(minfo_impl(params)),
             include_image_b64=params.include_image_b64,
@@ -127,7 +150,7 @@ def register(mcp: FastMCP) -> None:
         },
     )
     async def maimai_rise(params: RiseInput) -> str:
-        """Recommend charts to gain rating (上分). Optional level/score filter."""
+        """Recommend charts to gain rating (上分). params.source for one-shot prober."""
         return result_to_json(
             await run_fr(rise_impl(params)),
             include_image_b64=params.include_image_b64,
@@ -177,7 +200,9 @@ def register(mcp: FastMCP) -> None:
         async def _go():
             await ensure_ready()
             p = normalize_player(params)
-            text, song = await query_fortune(p.qq, username=p.username)
+            text, song = await query_fortune(
+                p.qq, username=p.username, source=p.source
+            )
             if p.format == "json":
                 return FeatureResult.success(
                     text=text,
@@ -206,10 +231,13 @@ def register(mcp: FastMCP) -> None:
             await ensure_ready()
             p = normalize_player(params)
             song = await query_mai_what(
-                qq=p.qq, username=p.username, rise=p.rise
+                qq=p.qq, username=p.username, rise=p.rise, source=p.source
             )
             song2, ctx, _ = await query_chart_info(
-                str(song.song_id), p.qq, username=p.username
+                str(song.song_id),
+                p.qq,
+                username=p.username,
+                source=p.source,
             )
             return draw_chart_info(song2, ctx, out=p.out)
 

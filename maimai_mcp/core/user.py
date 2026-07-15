@@ -74,6 +74,20 @@ async def resolve_user(
     return user
 
 
+def apply_source_override(user: User, source: str | None) -> User:
+    """Return user with service overridden for this query only (no DB write)."""
+    if not source or not str(source).strip():
+        return user
+    svc = ServiceName.get_by_index(str(source).strip())
+    if svc is None:
+        raise ValidationError(
+            f"未知数据源：{source}。可选 水鱼/divingfish 或 落雪/lxns。"
+        )
+    if user.service == svc:
+        return user
+    return user.model_copy(update={"service": svc})
+
+
 async def resolve_player(
     qq: int | None = None,
     username: str | None = None,
@@ -81,14 +95,26 @@ async def resolve_player(
     auto_create: bool = True,
     require_lxns_auth: bool = False,
     optional: bool = False,
+    source: str | None = None,
 ) -> PlayerRef | None:
     """
     Resolve player for score queries.
 
     - ``username`` → 水鱼用户名查询（可同时 ``qq`` 只取本地主题）
     - 仅 ``qq`` → 本地用户 + 其设定中的数据源（默认水鱼）
+    - ``source`` → 本次覆盖数据源（不写库）；Agent 根据用户意图传入
     - ``optional=True`` 时两者都没有则返回 None
     """
+    override: ServiceName | None = None
+    if source and str(source).strip():
+        override = ServiceName.get_by_index(str(source).strip())
+        if override is None:
+            raise ValidationError(
+                f"未知数据源：{source}。可选 水鱼/divingfish 或 落雪/lxns。"
+            )
+        if override == ServiceName.DIVINGFISH:
+            require_lxns_auth = False
+
     uname = (username or "").strip() or None
 
     if uname:
@@ -100,12 +126,22 @@ async def resolve_player(
                 )
             except Exception:
                 user = ephemeral_user()
+        if override is not None:
+            user = apply_source_override(user, source)
         return PlayerRef(user=user, username=uname)
 
     try:
         user = await resolve_user(
             qq, auto_create=auto_create, require_lxns_auth=require_lxns_auth
         )
+        if override is not None:
+            user = apply_source_override(user, source)
+            if (
+                user.service == ServiceName.LXNS
+                and user.access_token is None
+                and user.refresh_token is None
+            ):
+                raise PermissionError(AUTHORIZE_ERROR)
         return PlayerRef(user=user, username=None)
     except ValidationError:
         if optional:

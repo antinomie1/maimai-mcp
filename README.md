@@ -85,6 +85,40 @@ maimai b50 --qq <QQ>
 maimai chart 834
 ```
 
+### 6. 官服成绩上传水鱼（可选）
+
+将机台扫码成绩导入 [Diving-Fish](https://www.diving-fish.com/maimaidx/prober/) 时：
+
+1. 在水鱼网页「编辑个人资料」生成 **Import-Token**（**不是** 开发者 `DIVINGFISH_TOKEN`）。
+2. 绑定到本地 `user.db`：
+
+```bash
+maimai user bind-import --qq <QQ> --token <Import-Token>
+maimai user show --qq <QQ>   # 可见 import_token 绑定状态（掩码）
+```
+
+3. 确保曲库缓存为水鱼 `/music_data`（`static/data/music_data.json`）：
+
+```bash
+maimai update music
+```
+
+4. 一键：扫码内容 → dump → convert → 上传。**必须声明数据源 `--source`**：
+
+```bash
+# 水鱼（需 bind-import）
+maimai records update --qq <QQ> --qr-content 'SGWC...' --source divingfish
+
+# 落雪（需先 maimai user bind 落雪 OAuth，scope 含 write_player）
+maimai records update --qq <QQ> --qr-content 'SGWC...' --source lxns
+
+# 水鱼 + 落雪
+maimai records update --qq <QQ> --qr-content 'SGWC...' --source both
+```
+
+MCP：`maimai_update_records` 的 **`params.source` 必填**：`divingfish` | `lxns` | `both`（也可用 `target` 别名）。  
+响应含 `source` / `sources` / `source_label`。水鱼 convert 用 `music_data` title/type；落雪按官方 `musicId` 映射 id/type。
+
 ---
 
 ## 部署（源码）

@@ -15,13 +15,17 @@ async def query_best50(
     *,
     username: str | None = None,
     all_perfect: bool = False,
+    source: str | None = None,
 ) -> tuple[User, Player, Best50, bool]:
     """
     Returns:
         user, player, best50, is_username_query
     """
     ref = await resolve_player(
-        qq, username, require_lxns_auth=not bool((username or "").strip())
+        qq,
+        username,
+        require_lxns_auth=not bool((username or "").strip()),
+        source=source,
     )
     assert ref is not None
     if all_perfect and (

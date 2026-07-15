@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class StrictModel(BaseModel):
@@ -30,6 +30,17 @@ class PlayerArgs(StrictModel):
         default=None,
         description="Diving-Fish username if no QQ. Prefer qq for Lxns.",
         max_length=64,
+    )
+    source: str | None = Field(
+        default=None,
+        description=(
+            "One-shot data source for this query only (does NOT write user.db): "
+            "divingfish / 水鱼 / df, or lxns / 落雪. "
+            "When the user names a prober for this query, MUST set this. "
+            "Omit to use the QQ saved default (maimai_user_show.service)."
+        ),
+        validation_alias=AliasChoices("source", "service", "数据源"),
+        max_length=32,
     )
 
 
@@ -207,6 +218,64 @@ class BindInput(StrictModel):
     code: str | None = Field(
         default=None,
         description="Lxns OAuth code XXXX-XXXX-XXXX; omit to get authorize URL",
+    )
+
+
+class BindImportTokenInput(StrictModel):
+    qq: int = Field(..., ge=1, description="Player QQ (binding subject)")
+    import_token: str = Field(
+        ...,
+        min_length=8,
+        max_length=256,
+        description="Diving-Fish score Import-Token (not developer token)",
+        validation_alias=AliasChoices("import_token", "importToken"),
+    )
+
+
+class UpdateRecordsInput(StrictModel):
+    qq: int = Field(
+        ...,
+        ge=1,
+        description=(
+            "Player QQ. divingfish needs Import-Token bind; "
+            "lxns needs maimai_user_bind_lxns OAuth."
+        ),
+    )
+    # Required: never upload without an explicit data source.
+    source: Literal["divingfish", "lxns", "both"] = Field(
+        ...,
+        description=(
+            "REQUIRED data source for upload. "
+            "divingfish / 水鱼: Import-Token; "
+            "lxns / 落雪: OAuth write_player; "
+            "both: dump once, upload to both."
+        ),
+        validation_alias=AliasChoices(
+            "source",
+            "sources",
+            "target",
+            "targets",
+            "数据源",
+        ),
+    )
+    qr_content: str = Field(
+        ...,
+        min_length=1,
+        description="QR decode string (usually starts with SGWC)",
+        validation_alias=AliasChoices("qr_content", "qrContent"),
+    )
+    keyship: str | None = Field(default=None, description="keychip / keyship id")
+    logoutid: Literal[1, 2] | None = Field(default=None)
+    title_ver: str | None = Field(
+        default=None,
+        description="Title version e.g. 1.55.00",
+        validation_alias=AliasChoices("title_ver", "titleVer"),
+    )
+    timeout: float = Field(default=240.0, ge=30, le=600)
+    refresh_music: bool = Field(
+        default=False,
+        description="Force refresh Diving-Fish music_data cache before convert",
+        validation_alias=AliasChoices("refresh_music", "refreshMusic"),
     )
 
 

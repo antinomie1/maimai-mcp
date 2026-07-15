@@ -26,6 +26,7 @@ async def query_level_progress(
     username: str | None = None,
     category: str | None = None,
     page: int = 1,
+    source: str | None = None,
 ) -> tuple[
     User,
     str,
@@ -53,7 +54,10 @@ async def query_level_progress(
         cat = CATEGORY_ALIAS[category]
 
     ref = await resolve_player(
-        qq, username, require_lxns_auth=not bool((username or "").strip())
+        qq,
+        username,
+        require_lxns_auth=not bool((username or "").strip()),
+        source=source,
     )
     assert ref is not None
     play_result = await get_player_result_ref(ref)

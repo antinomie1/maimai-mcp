@@ -17,6 +17,7 @@ async def query_rating_table(
     qq: int | None = None,
     username: str | None = None,
     with_progress: bool = False,
+    source: str | None = None,
 ) -> tuple[str, User | None, list[PlayedResult] | None, bool]:
     if rating in LEVEL_LIST[:6]:
         raise ValidationError("只支持查询 lv7-15 的定数表。")
@@ -25,7 +26,10 @@ async def query_rating_table(
     if not with_progress:
         return rating, None, None, False
     ref = await resolve_player(
-        qq, username, require_lxns_auth=not bool((username or "").strip())
+        qq,
+        username,
+        require_lxns_auth=not bool((username or "").strip()),
+        source=source,
     )
     assert ref is not None
     play_result = await get_player_result_ref(ref)

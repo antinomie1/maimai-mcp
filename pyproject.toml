@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maimai-mcp"
-version = "0.2.0"
+version = "0.2.1"
 description = "maimaiDX query library, CLI and MCP (stdio) server for maimai DX"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -50,12 +50,16 @@ dependencies = [
   "sqlmodel>=0.0.38",
   "numpy~=2.2.6",
   "mcp>=1.0.0",
+  "requests>=2.31",
+  # optional preferred AES backend for official dump (falls back to pure Python)
+  "cryptography>=42.0",
 ]
 
 [project.optional-dependencies]
 dev = [
   "build>=1.2.0",
   "twine>=5.0.0",
+  "pytest>=8.0",
 ]
 
 [project.scripts]

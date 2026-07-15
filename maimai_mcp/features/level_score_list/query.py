@@ -19,6 +19,7 @@ async def query_level_score_list(
     qq: int | None = None,
     username: str | None = None,
     page: int = 1,
+    source: str | None = None,
 ) -> tuple[User, str | float, int, list[PlayedResult]]:
     if "." in rating:
         if not re.fullmatch(r"[0-9]+\.[0-9]", rating):
@@ -30,7 +31,10 @@ async def query_level_score_list(
         rating_v = rating
 
     ref = await resolve_player(
-        qq, username, require_lxns_auth=not bool((username or "").strip())
+        qq,
+        username,
+        require_lxns_auth=not bool((username or "").strip()),
+        source=source,
     )
     assert ref is not None
     play_result = await get_player_result_ref(ref)

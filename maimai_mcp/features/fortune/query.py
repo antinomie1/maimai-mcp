@@ -24,10 +24,14 @@ def _fortune_seed(qq: int | None, username: str | None) -> int:
 
 @handle_errors
 async def query_fortune(
-    qq: int | None = None, *, username: str | None = None
+    qq: int | None = None,
+    *,
+    username: str | None = None,
+    source: str | None = None,
 ) -> tuple[str, Song]:
     # Prefer explicit identity; optional so username-only / no-id still works
-    ref = await resolve_player(qq, username, optional=True)
+    # source kept for PlayerArgs consistency (fortune does not fetch scores)
+    ref = await resolve_player(qq, username, optional=True, source=source)
     seed_qq = ref.user.qqid if ref and ref.user.qqid else None
     seed_user = ref.username if ref else username
     fortune_hash = _fortune_seed(seed_qq if not seed_user else None, seed_user)

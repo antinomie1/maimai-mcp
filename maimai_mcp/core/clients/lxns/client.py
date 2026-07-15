@@ -118,23 +118,40 @@ class LxnsClient(ApiClient):
 
         return True
 
+    def _error_detail(self, resp: Response) -> str:
+        try:
+            data = resp.json()
+            if isinstance(data, dict):
+                msg = data.get("message") or data.get("msg") or data.get("error")
+                code = data.get("code")
+                if msg and code is not None:
+                    return f"code={code} {msg}"
+                if msg:
+                    return str(msg)
+                return str(data)[:500]
+        except Exception:
+            pass
+        text = (resp.text or "").strip()
+        return text[:500] if text else f"HTTP {resp.status_code}"
+
     def _handle_error(self, resp: Response):
+        detail = self._error_detail(resp)
         match resp.status_code:
             case 200:
                 return
             case 400:
-                raise LXNSParamsError
+                raise LXNSParamsError(detail, body=detail)
             case 401:
                 self._friend_code = None
-                raise LXNSOAuthError
+                raise LXNSOAuthError(detail)
             case 403:
-                raise LXNSPermissionDeniedError
+                raise LXNSPermissionDeniedError(detail)
             case 404:
-                raise LXNSNotFoundError
+                raise LXNSNotFoundError(detail)
             case 429:
-                raise LXNSTooManyRequestsError
+                raise LXNSTooManyRequestsError(detail)
             case _:
-                raise UnknownError
+                raise UnknownError(detail)
 
     async def _request_data(self, method: str, endpoint: str, **kwargs) -> APIResult:
         data = await self._request(method, endpoint, **kwargs)
@@ -250,6 +267,48 @@ class LxnsAPI:
         """
         result = await self._oauth_client._request_data("GET", "/scores")
         return [Score.model_validate(s) for s in result.data]
+
+    async def upload_scores(self, scores: list[dict]) -> APIResult:
+        """个人 API：上传成绩 POST /api/v0/user/maimai/player/scores
+
+        需要用户 OAuth（scope 含 write_player）。
+
+        **默认整包一次 POST**（不拆批、不二分）。坏数据应在 convert 阶段滤掉。
+        仅当 429 时退避后整包重试一次。
+        """
+        import asyncio
+
+        if not self._oauth_client:
+            raise LXNSTokenError("未绑定落雪 OAuth，无法上传成绩")
+        n = len(scores)
+        if n == 0:
+            return APIResult(
+                success=True, code=0, message="empty", data={"uploaded": 0, "total": 0}
+            )
+
+        async def post_all() -> None:
+            await self._oauth_client._request_data(
+                "POST", "/scores", json={"scores": scores}
+            )
+
+        try:
+            await post_all()
+        except LXNSTooManyRequestsError:
+            await asyncio.sleep(3.0)
+            try:
+                await post_all()
+            except LXNSTooManyRequestsError as exc:
+                detail = getattr(exc, "message", None) or str(exc) or "too many requests"
+                raise LXNSTooManyRequestsError(
+                    f"{detail}（请稍后再试；本上传仅 1 次请求）"
+                ) from exc
+
+        return APIResult(
+            success=True,
+            code=0,
+            message=f"uploaded={n}/{n} requests=1",
+            data={"uploaded": n, "total": n, "requests": 1},
+        )
 
     async def heatmap(self) -> dict[str, int]:
         """

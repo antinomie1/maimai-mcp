@@ -16,6 +16,7 @@ async def query_chart_info(
     *,
     username: str | None = None,
     optional_user: bool = True,
+    source: str | None = None,
 ) -> tuple[Song, dict, User | None]:
     key = str(song_key)
     song = resolve_song(key)
@@ -27,7 +28,11 @@ async def query_chart_info(
             + "\n".join(f"{s.song_id}：{s.song_name}" for s in song if s)
         )
     ref = await resolve_player(
-        qq, username, require_lxns_auth=False, optional=optional_user
+        qq,
+        username,
+        require_lxns_auth=False,
+        optional=optional_user,
+        source=source,
     )
     ctx = await get_chart_calc_context_ref(ref, song)
     return song, ctx, ref.user if ref else None

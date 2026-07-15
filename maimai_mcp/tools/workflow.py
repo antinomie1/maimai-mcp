@@ -36,6 +36,7 @@ async def lookup_song_impl(params: LookupSongInput) -> FeatureResult:
             format="json",
             qq=params.qq,
             username=params.username,
+            source=params.source,
         )
     )
     if not search_fr.ok:
@@ -49,6 +50,7 @@ async def lookup_song_impl(params: LookupSongInput) -> FeatureResult:
                 username=params.username,
                 format=params.format,
                 out=params.out,
+                source=params.source,
             )
         )
     if len(songs) > 1:
@@ -64,6 +66,7 @@ async def lookup_song_impl(params: LookupSongInput) -> FeatureResult:
             username=params.username,
             format=params.format,
             out=params.out,
+            source=params.source,
         )
     )
     if not params.with_minfo:
@@ -74,6 +77,7 @@ async def lookup_song_impl(params: LookupSongInput) -> FeatureResult:
             qq=params.qq,
             username=params.username,
             format="json",
+            source=params.source,
         )
     )
     # Prefer chart image; attach minfo data
@@ -102,6 +106,7 @@ async def player_overview_impl(params: PlayerOverviewInput) -> FeatureResult:
             format=params.format,
             out=params.out,
             include_image_b64=params.include_image_b64,
+            source=params.source,
         )
     )
     if not params.with_rise:
@@ -111,6 +116,7 @@ async def player_overview_impl(params: PlayerOverviewInput) -> FeatureResult:
             qq=params.qq,
             username=params.username,
             format="json",
+            source=params.source,
         )
     )
     if not b50_fr.ok:
@@ -131,7 +137,12 @@ async def push_plan_impl(params: PushPlanInput) -> FeatureResult:
     await ensure_ready()
     params = normalize_player(params)
     b50_fr = await b50_impl(
-        B50Input(qq=params.qq, username=params.username, format="json")
+        B50Input(
+            qq=params.qq,
+            username=params.username,
+            format="json",
+            source=params.source,
+        )
     )
     rise_fr = await rise_impl(
         RiseInput(
@@ -140,6 +151,7 @@ async def push_plan_impl(params: PushPlanInput) -> FeatureResult:
             level=params.level,
             score=params.score,
             format="json",
+            source=params.source,
         )
     )
     chart_fr: FeatureResult | None = None
@@ -159,6 +171,7 @@ async def push_plan_impl(params: PushPlanInput) -> FeatureResult:
                         username=params.username,
                         format=params.format,
                         out=params.out,
+                        source=params.source,
                     )
                 )
     return FeatureResult.success(

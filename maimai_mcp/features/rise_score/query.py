@@ -19,11 +19,15 @@ async def query_rise_score(
     username: str | None = None,
     level: str | None = None,
     score: int | None = None,
+    source: str | None = None,
 ) -> tuple[User, list[RiseResult], int, list[RiseResult], int]:
     if level and level not in LEVEL_LIST:
         raise ValidationError("无此等级")
     ref = await resolve_player(
-        qq, username, require_lxns_auth=not bool((username or "").strip())
+        qq,
+        username,
+        require_lxns_auth=not bool((username or "").strip()),
+        source=source,
     )
     assert ref is not None
     _, best50 = await get_best50_ref(ref)

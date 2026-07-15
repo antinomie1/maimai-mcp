@@ -31,7 +31,11 @@ async def plate_impl(params: PlateInput) -> FeatureResult:
     await ensure_ready()
     params = normalize_player(params)
     user, play_result, ver, version_name, plan = await query_plate(
-        params.ver, params.plan, params.qq, username=params.username
+        params.ver,
+        params.plan,
+        params.qq,
+        username=params.username,
+        source=params.source,
     )
     kwargs = dict(
         service=user.service,
@@ -69,6 +73,7 @@ def register(mcp: FastMCP) -> None:
                 qq=p.qq,
                 username=p.username,
                 with_progress=p.progress or p.plan,
+                source=p.source,
             )
             if with_p and user and play_result is not None:
                 return draw_rating_table_progress(
@@ -124,6 +129,7 @@ def register(mcp: FastMCP) -> None:
                 username=p.username,
                 category=p.category,
                 page=p.page,
+                source=p.source,
             )
             return draw_level_progress(
                 user, level, plan, cat, page, c, u, n, out=p.out
@@ -154,6 +160,7 @@ def register(mcp: FastMCP) -> None:
                 qq=p.qq,
                 username=p.username,
                 page=p.page,
+                source=p.source,
             )
             if p.format == "json" and not p.out:
                 return FeatureResult.success(data=results)
