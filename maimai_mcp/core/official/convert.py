@@ -6,7 +6,7 @@ JSON list accepted by Diving-Fish /player/update_records:
 achievements, dxScore, fc, fs, level_index, title, type.
 
 Song title/type index MUST come from Diving-Fish /music_data cache
-({MAIMAIDX_PATH}/data/music_data.json), not a third-party song list snapshot.
+({STATIC_PATH}/data/music_data.json), not a third-party song list snapshot.
 """
 
 from __future__ import annotations
@@ -253,7 +253,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--music-data",
         type=Path,
         default=None,
-        help="Diving-Fish music_data.json cache path (default: MAIMAIDX_PATH/data/music_data.json)",
+        help="Diving-Fish music_data.json cache path (default: STATIC_PATH/data/music_data.json)",
     )
     return parser.parse_args(argv)
 

@@ -17,7 +17,20 @@ class Settings(BaseSettings):
 
 
 class BaseConfig(Settings):
-    maimaidx_path: str
+    """Runtime paths and drawing options.
+
+    ``static_path`` is the absolute path to the extracted ``static`` directory.
+    Env: ``STATIC_PATH`` (also accepts legacy ``MAIMAIDX_PATH``).
+    """
+
+    static_path: str = Field(
+        validation_alias=AliasChoices(
+            "STATIC_PATH",
+            "static_path",
+            "MAIMAIDX_PATH",
+            "maimaidx_path",
+        ),
+    )
     maimaidx_alias_proxy: bool = False
     save_in_memory: bool | None = True
     assets_online: bool | None = True

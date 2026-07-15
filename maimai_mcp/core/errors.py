@@ -31,10 +31,15 @@ from .clients.lxns.exceptions import (
 )
 
 NOTFOUNDUSER = dedent("""
-    未在水鱼查分器找到此玩家，请确保此玩家的用户名和查分器中的用户名相同。
-    如未绑定，请前往查分器官网进行绑定。
+    未在水鱼查分器找到此玩家，请确认用户名与查分器绑定一致。
+    若尚未绑定，请到水鱼查分器官网完成绑定：
     https://www.diving-fish.com/maimaidx/prober/
 """).strip()
+
+_RESOURCE_DOWNLOAD = (
+    "资源包见 README「下载静态资源」"
+    "（Cloudreve / OneDrive），解压后将 STATIC_PATH 指向其中的 static 目录。"
+)
 
 T = TypeVar("T")
 
@@ -79,30 +84,57 @@ def exception_to_message(exc: BaseException) -> str:
     if isinstance(exc, DivingFishUserNotFoundError):
         return NOTFOUNDUSER
     if isinstance(exc, UserNotExistsError):
-        return "查询的用户不存在。"
+        return (
+            "查询的用户不存在。请确认已传入正确的 qq 或水鱼 username，"
+            "并在查分器完成绑定：https://www.diving-fish.com/maimaidx/prober/"
+        )
     if isinstance(exc, DivingFishUserDisabledQueryError):
-        return "该用户禁止了其他人获取数据或未同意用户协议。"
+        return (
+            "该用户禁止了其他人获取数据，或未同意用户协议。"
+            "请玩家在水鱼查分器个人设置中开放查询权限："
+            "https://www.diving-fish.com/maimaidx/prober/"
+        )
     if isinstance(
         exc,
         (DivingFishTokenDisableError, DivingFishTokenNotFoundError, DivingFishTokenError),
     ):
         log.error("水鱼开发者Token异常，请自行检查。")
-        return "请检查水鱼查分器相关配置，暂时无法查询。"
+        return (
+            "水鱼开发者 Token 无效或未配置，暂时无法查询。"
+            "请在环境变量 DIVINGFISH_TOKEN 中填写开发者 Token"
+            "（水鱼查分器开发者设置；注意不是个人成绩 Import-Token）。"
+        )
     if isinstance(exc, LXNSTokenError):
-        return "落雪查分器授权错误，请尝试重新绑定授权。"
+        return (
+            "落雪查分器授权错误。请用 maimai_user_bind_lxns 重新获取授权链接并提交 code，"
+            "或 CLI：maimai user bind --qq <QQ>。"
+        )
     if isinstance(exc, LXNSPermissionDeniedError):
-        return "使用落雪查分器的权限不足，请检查相关配置。"
+        return (
+            "落雪查分器权限不足。请重新绑定并确认 OAuth 权限包含所需 scope"
+            "（上传成绩需 write_player）。"
+            "工具：maimai_user_bind_lxns；CLI：maimai user bind。"
+        )
     if isinstance(exc, LXNSNotFoundError):
-        return "未找到落雪查分器相关资源，请检查相关配置。"
+        return (
+            "未在落雪查分器找到对应资源。请确认已绑定落雪且玩家存在；"
+            "绑定：maimai_user_bind_lxns。"
+        )
     if isinstance(exc, LXNSTooManyRequestsError):
-        return "使用落雪查分器的请求次数过多，请稍后再试。"
+        return "落雪查分器请求过于频繁，请稍后再试。"
     if isinstance(exc, LXNSParamsError):
         log.error(f"请求参数错误。\n{traceback.format_exc()}")
-        return "使用落雪查分器请求时发生错误，请检查相关配置。"
+        return (
+            "落雪查分器请求参数错误。请检查绑定状态与请求内容；"
+            "必要时重新 maimai_user_bind_lxns。"
+        )
     if isinstance(exc, LXNSOAuthError):
-        return "落雪查分器授权错误，请重试，依旧错误请重新绑定授权。"
+        return (
+            "落雪 OAuth 授权失败。请重试 maimai_user_bind_lxns 获取新链接并提交 code；"
+            "仍失败请检查 LX_CLIENT_ID / LX_CLIENT_SECRET / REDIRECT_URI。"
+        )
     if isinstance(exc, MusicNotPlayError):
-        return "您未游玩过曲目。"
+        return "您未游玩过该曲目。"
     if isinstance(exc, NotMusicRecommendationError):
         return "没有乐曲推荐呢。可能是您太强了。"
     if isinstance(exc, PermissionError):
@@ -114,14 +146,22 @@ def exception_to_message(exc: BaseException) -> str:
         log.error(f"发生错误: {traceback.format_exc()}")
         return (
             f"曲库缺少谱面数据（{key}）。"
-            "请执行 maimai_update_catalog 更新曲库；若仍失败请反馈该 key。"
+            "请执行 CLI：maimai update music（或 MCP：maimai_update_catalog）；"
+            "若仍失败请反馈该 key。"
         )
     if isinstance(exc, FileNotFoundError):
         log.error(f"发生错误: {traceback.format_exc()}")
-        return f"缺少资源文件：{exc}"
+        missing = getattr(exc, "filename", None) or (
+            exc.args[0] if exc.args else str(exc)
+        )
+        return (
+            f"缺少资源文件：{missing}。"
+            "请确认 STATIC_PATH 指向完整 static 目录（含 mai/、font/ 等）。"
+            f"{_RESOURCE_DOWNLOAD}"
+            " 表图为空时可运行：maimai update tables。"
+        )
     log.error(f"发生错误: {traceback.format_exc()}")
     return f"发生未知错误：{type(exc).__name__}"
-
 
 def exception_to_code(exc: BaseException) -> str:
     if isinstance(exc, MaimaiError):

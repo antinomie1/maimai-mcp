@@ -81,7 +81,7 @@ def _build_parser() -> argparse.ArgumentParser:
     rc.add_argument(
         "--music-data",
         default=None,
-        help="水鱼 music_data.json 路径（默认 MAIMAIDX_PATH/data/music_data.json）",
+        help="水鱼 music_data.json 路径（默认 STATIC_PATH/data/music_data.json）",
     )
 
     # Common flags live on the root parser (--quiet / via parse_intermixed).

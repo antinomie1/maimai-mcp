@@ -1,7 +1,7 @@
 # maimai-mcp
 
-[![PyPI version](https://badge.fury.io/py/maimai-mcp.svg)](https://badge.fury.io/py/maimai-mcp)
-[![Python versions](https://img.shields.io/pypi/pyversions/maimai-mcp.svg)](https://pypi.org/project/maimai-mcp/)
+[![PyPI](https://img.shields.io/badge/PyPI-0.2.1-blue)](https://pypi.org/project/maimai-mcp/0.2.1/)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://pypi.org/project/maimai-mcp/)
 
 本地可用的舞萌 DX 查询库 / CLI / MCP 服务：查曲、查分、进度与绘图，供命令行或任意 Agent / 宿主调用。
 
@@ -14,9 +14,21 @@ CLI 命令（`maimai …`）与 MCP 工具（`maimai_*`）能力一一对应；A
 
 ---
 
-## 部署（pip，推荐）
+## 部署（推荐）
 
 ### 1. 安装包
+
+**uv（推荐）**
+
+```bash
+# 安装为全局工具（提供 maimai / maimai-mcp 入口）
+uv tool install maimai-mcp
+
+# 或临时运行 MCP（不先安装）
+uvx maimai-mcp
+```
+
+**pip**
 
 ```bash
 pip install maimai-mcp
@@ -27,7 +39,7 @@ pip install maimai-mcp
 - `maimai-mcp`：stdio MCP 服务  
 - `maimai`：命令行  
 
-也可用模块方式启动：`python -m maimai_mcp` / `python -m maimai_mcp.cli`。
+也可用模块方式启动：`python -m maimai_mcp` / `python -m maimai_mcp.cli`；uv 环境内可用 `uv run maimai …` / `uv run maimai-mcp`。
 
 ### 2. 下载静态资源
 
@@ -42,8 +54,8 @@ pip install maimai-mcp
 
 | 变量 | 必填 | 说明 |
 |------|------|------|
-| `MAIMAIDX_PATH` | **是** | 上一步 `static` 的绝对路径 |
-| `DIVINGFISH_TOKEN` | 建议 | [水鱼开发者 Token](https://www.diving-fish.com/maimaidx/prober/)，提高接口配额与稳定性 |
+| `STATIC_PATH` | **是** | 上一步 `static` 的绝对路径 |
+| `DIVINGFISH_TOKEN` | 建议 | [水鱼开发者 Token](https://www.diving-fish.com/maimaidx/prober/)，提高接口配额与稳定性（不是 Import-Token） |
 | `OUTPUT_DIR` | 否 | 出图保存目录；不设则使用包内默认位置 |
 
 完整变量说明见 [`maimai_mcp/.env.example`](maimai_mcp/.env.example)。  
@@ -57,9 +69,10 @@ pip install maimai-mcp
 {
   "mcpServers": {
     "maimai": {
-      "command": "maimai-mcp",
+      "command": "uvx",
+      "args": ["maimai-mcp"],
       "env": {
-        "MAIMAIDX_PATH": "/path/to/static",
+        "STATIC_PATH": "/path/to/static",
         "OUTPUT_DIR": "/path/to/output",
         "DIVINGFISH_TOKEN": ""
       }
@@ -69,7 +82,8 @@ pip install maimai-mcp
 ```
 
 - 路径请换成真实位置；Windows 示例：`"C:\\\\path\\\\to\\\\static"`。  
-- 若 PATH 中找不到 `maimai-mcp`，可改为 `"command": "python", "args": ["-m", "maimai_mcp"]`。  
+- 已 `uv tool install` / `pip install` 时，可把 `command` 写成 `maimai-mcp`（去掉 `args`）。  
+- 也可用 `"command": "python", "args": ["-m", "maimai_mcp"]`。  
 - 更完整的字段示例见 [`mcp.example.json`](mcp.example.json)。  
 - 面向 Agent 的调用约定与避坑说明见 skill：[`skills/maimai-mcp/`](skills/maimai-mcp/)。
 
@@ -85,40 +99,6 @@ maimai b50 --qq <QQ>
 maimai chart 834
 ```
 
-### 6. 官服成绩上传水鱼（可选）
-
-将机台扫码成绩导入 [Diving-Fish](https://www.diving-fish.com/maimaidx/prober/) 时：
-
-1. 在水鱼网页「编辑个人资料」生成 **Import-Token**（**不是** 开发者 `DIVINGFISH_TOKEN`）。
-2. 绑定到本地 `user.db`：
-
-```bash
-maimai user bind-import --qq <QQ> --token <Import-Token>
-maimai user show --qq <QQ>   # 可见 import_token 绑定状态（掩码）
-```
-
-3. 确保曲库缓存为水鱼 `/music_data`（`static/data/music_data.json`）：
-
-```bash
-maimai update music
-```
-
-4. 一键：扫码内容 → dump → convert → 上传。**必须声明数据源 `--source`**：
-
-```bash
-# 水鱼（需 bind-import）
-maimai records update --qq <QQ> --qr-content 'SGWC...' --source divingfish
-
-# 落雪（需先 maimai user bind 落雪 OAuth，scope 含 write_player）
-maimai records update --qq <QQ> --qr-content 'SGWC...' --source lxns
-
-# 水鱼 + 落雪
-maimai records update --qq <QQ> --qr-content 'SGWC...' --source both
-```
-
-MCP：`maimai_update_records` 的 **`params.source` 必填**：`divingfish` | `lxns` | `both`（也可用 `target` 别名）。  
-响应含 `source` / `sources` / `source_label`。水鱼 convert 用 `music_data` title/type；落雪按官方 `musicId` 映射 id/type。
-
 ---
 
 ## 部署（源码）
@@ -130,35 +110,41 @@ MCP：`maimai_update_records` 的 **`params.source` 必填**：`divingfish` | `l
 ```bash
 git clone https://github.com/antinomie1/maimai-mcp.git
 cd maimai-mcp
+
+# uv（推荐，使用仓库内 uv.lock）
+uv sync
+# 含开发依赖：uv sync --extra dev
+
+# 或 pip
 pip install -e .
 ```
 
 ### 2. 下载静态资源
 
-与 [pip 部署第 2 步](#2-下载静态资源) 相同。可将资源放在仓库旁，或直接使用资源包内的 `static` 路径。
+与 [部署第 2 步](#2-下载静态资源) 相同。可将资源放在仓库旁，或直接使用资源包内的 `static` 路径。
 
 ### 3. 写配置
 
 ```bash
 cp maimai_mcp/.env.example maimai_mcp/.env
-# 编辑 .env：至少设置 MAIMAIDX_PATH，建议填写 DIVINGFISH_TOKEN
+# 编辑 .env：至少设置 STATIC_PATH，建议填写 DIVINGFISH_TOKEN
 ```
 
 也可以不写 `.env`，仅在 MCP 客户端的 `env` 中注入变量（字段含义见 [`.env.example`](maimai_mcp/.env.example)）。
 
 ### 4. 接入 MCP 客户端
 
-源码布局下推荐用 `python -m maimai_mcp`，并指定仓库为工作目录：
+源码布局下推荐用 `uv run`，并指定仓库为工作目录：
 
 ```json
 {
   "mcpServers": {
     "maimai": {
-      "command": "python",
-      "args": ["-m", "maimai_mcp"],
+      "command": "uv",
+      "args": ["run", "maimai-mcp"],
       "cwd": "/path/to/maimai-mcp",
       "env": {
-        "MAIMAIDX_PATH": "/path/to/static",
+        "STATIC_PATH": "/path/to/static",
         "OUTPUT_DIR": "/path/to/output",
         "DIVINGFISH_TOKEN": ""
       }
@@ -167,14 +153,16 @@ cp maimai_mcp/.env.example maimai_mcp/.env
 }
 ```
 
+也可用 `"command": "python", "args": ["-m", "maimai_mcp"]`（需已 `uv sync` 或 `pip install -e .` 且 PATH 指向对应解释器）。
+
 Agent skill 仍在 [`skills/maimai-mcp/`](skills/maimai-mcp/)。本地联调可参考 `scripts/run_inspector.ps1` 与 `scripts/smoke_mcp_tools.py`。
 
 ### 5. 初始化与自检
 
 ```bash
-maimai update tables
-maimai b50 --qq <QQ>
-# 或：python -m maimai_mcp.cli b50 --qq <QQ>
+uv run maimai update tables
+uv run maimai b50 --qq <QQ>
+# 或：maimai … / python -m maimai_mcp.cli …
 ```
 
 ---
@@ -230,10 +218,49 @@ maimai b50 --qq <QQ>
 
 | 工具 | 说明 |
 |------|------|
-| `maimai_user_show` | 查看指定 QQ 的主题与查分源（`service`） |
+| `maimai_user_show` | 查看主题、默认查分源、Import-Token 绑定状态（须传 `qq`） |
 | `maimai_user_set_theme` | 设置出图主题：`circle`（默认）或 `prism_plus` |
 | `maimai_user_set_source` | 设置默认查分源：水鱼或落雪 |
 | `maimai_user_bind_lxns` | 获取落雪 OAuth 授权链接，或提交 `code` 完成绑定 |
+
+### 官服成绩上传
+
+| 工具 | 说明 |
+|------|------|
+| `maimai_user_bind_import_token` | 绑定水鱼 **Import-Token**（个人资料页生成，不是 `DIVINGFISH_TOKEN`） |
+| `maimai_update_records` | 机台扫码 → dump → convert → 上传；**`params.source` 必填** `divingfish` \| `lxns` \| `both` |
+
+将机台扫码成绩导入 [水鱼](https://www.diving-fish.com/maimaidx/prober/) / 落雪时：
+
+1. 在水鱼网页「编辑个人资料」生成 **Import-Token**（**不是** 开发者 `DIVINGFISH_TOKEN`）。
+2. 绑定到本地 `user.db`：
+
+```bash
+maimai user bind-import --qq <QQ> --token <Import-Token>
+maimai user show --qq <QQ>   # 可见 import_token 绑定状态（掩码）
+```
+
+3. 确保曲库缓存为水鱼 `/music_data`（`static/data/music_data.json`）：
+
+```bash
+maimai update music
+```
+
+4. 一键：扫码内容 → dump → convert → 上传。**必须声明数据源 `--source`**：
+
+```bash
+# 水鱼（需 bind-import）
+maimai records update --qq <QQ> --qr-content 'SGWC...' --source divingfish
+
+# 落雪（需先 maimai user bind 落雪 OAuth，scope 含 write_player）
+maimai records update --qq <QQ> --qr-content 'SGWC...' --source lxns
+
+# 水鱼 + 落雪
+maimai records update --qq <QQ> --qr-content 'SGWC...' --source both
+```
+
+MCP：`maimai_update_records` 的 **`params.source` 必填**：`divingfish` | `lxns` | `both`（也可用 `target` 别名）。  
+响应含 `source` / `sources` / `source_label`。
 
 ### 可选：身份缓存（需 OneBot / NapCat）
 
@@ -251,7 +278,7 @@ maimai b50 --qq <QQ>
 ## License
 
 - 本仓库代码：**[BSD-2-Clause](LICENSE)**
-- 参考自 [maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX) 的部分：**MIT**（见 LICENSE 附录）
+- 参考自 [maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX) 的部分：**MIT**（见 [LICENSE-UPSTREAM](LICENSE-UPSTREAM)）
 - `static` 等美术 / 字体资源**不随包分发**，版权以资源包与官方声明为准，不在本许可范围内
 
 ## 致谢

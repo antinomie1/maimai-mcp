@@ -60,11 +60,12 @@ async def bootstrap(
     if not quiet and not _warned_config:
         if dfconfig.divingfish_token is None:
             log.opt(colors=True).warning(
-                "<r>未配置水鱼查分器开发者Token，查分模块可能仅能使用 b50</r>"
+                "<r>未配置 DIVINGFISH_TOKEN（水鱼开发者 Token），"
+                "部分查分接口可能受限；与 Import-Token 不是同一项</r>"
             )
         if lxnsconfig.lxns_dev_token is None:
             log.opt(colors=True).warning(
-                "<r>未配置落雪查分器开发者Token，无法使用落雪数据源</r>"
+                "<r>未配置 LXNS_DEV_TOKEN（落雪开发者 Token），无法使用落雪数据源</r>"
             )
         _warned_config = True
 

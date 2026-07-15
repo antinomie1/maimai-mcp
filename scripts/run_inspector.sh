@@ -6,7 +6,7 @@ export PYTHONPATH="$ROOT"
 PYTHON="${PYTHON:-python3}"
 
 if [[ ! -f "$ROOT/maimai_mcp/.env" ]]; then
-  echo "WARN: missing maimai_mcp/.env (copy .env.example, set MAIMAIDX_PATH)" >&2
+  echo "WARN: missing maimai_mcp/.env (copy .env.example, set STATIC_PATH)" >&2
 fi
 
 echo "Repo: $ROOT"

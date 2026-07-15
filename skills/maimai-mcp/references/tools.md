@@ -20,6 +20,7 @@
 | `maimai_rating_table` | 定数表（个人进度时依赖源） |
 | `maimai_level_progress` | 等级进度 |
 | `maimai_rise` | 上分推荐 |
+| `maimai_ranking` | 水鱼公开 rating 榜（搜名 / `my=true`） |
 | `maimai_fortune` | 今日运势（娱乐；`source` 可有可无） |
 
 ## 曲库 / 谱面

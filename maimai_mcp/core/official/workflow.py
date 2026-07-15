@@ -94,13 +94,19 @@ async def get_import_token(qq: Any) -> str:
         user = await resolve_user(int(qq_text), auto_create=False)
     except UserNotBindError as exc:
         raise WorkflowError(
-            "本地尚无该 QQ 的用户记录。请先 maimai user bind-import 绑定 Import-Token。"
+            "本地尚无该 QQ 的用户记录。"
+            "请先绑定水鱼 Import-Token："
+            "CLI `maimai user bind-import --qq <QQ> --token <Import-Token>`，"
+            "或 MCP `maimai_user_bind_import_token`。"
+            "Import-Token 在水鱼网页「编辑个人资料」生成，不是 DIVINGFISH_TOKEN。"
         ) from exc
     token = getattr(user, "import_token", None)
     if not token:
         raise WorkflowError(
-            "还没有绑定水鱼成绩导入 token。请先调用 maimai_user_bind_import_token "
-            "或执行 maimai user bind-import。"
+            "尚未绑定水鱼成绩 Import-Token。"
+            "CLI：`maimai user bind-import --qq <QQ> --token <Import-Token>`；"
+            "MCP：`maimai_user_bind_import_token`。"
+            "Token 来自水鱼个人资料页，不是开发者 DIVINGFISH_TOKEN。"
         )
     return normalize_token(token)
 

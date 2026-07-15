@@ -2,12 +2,18 @@ from pathlib import Path
 
 from .config import maiconfig
 
-if maiconfig.maimaidx_path:
-    static = Path(maiconfig.maimaidx_path)
+_STATIC_PATH_HINT = (
+    "未配置静态资源目录。请设置环境变量 STATIC_PATH 为资源包内 static 的绝对路径"
+    "（可写在 maimai_mcp/.env，或 MCP 客户端 env 块中）。"
+    "资源包下载："
+    "https://cloud.yuzuchan.moe/f/34s7/Resource%20CN1.55.7z"
+    " 或 OneDrive（见 README「下载静态资源」）。"
+)
+
+if maiconfig.static_path:
+    static = Path(maiconfig.static_path)
 else:
-    raise ValueError(
-        "未检测到静态文件夹 `static`，请在 .env 中配置 MAIMAIDX_PATH 为 static 的绝对路径"
-    )
+    raise ValueError(_STATIC_PATH_HINT)
 
 
 # 静态资源路径

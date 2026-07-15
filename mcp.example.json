@@ -1,9 +1,10 @@
 {
   "mcpServers": {
     "maimai": {
-      "command": "maimai-mcp",
+      "command": "uvx",
+      "args": ["maimai-mcp"],
       "env": {
-        "MAIMAIDX_PATH": "C:\\path\\to\\static",
+        "STATIC_PATH": "C:\\path\\to\\static",
         "OUTPUT_DIR": "C:\\path\\to\\output",
         "MAIMAIDX_ALIAS_PROXY": "false",
         "SAVE_IN_MEMORY": "true",

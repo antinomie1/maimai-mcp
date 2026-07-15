@@ -9,7 +9,7 @@ description = "maimaiDX query library, CLI and MCP (stdio) server for maimai DX"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "BSD-2-Clause"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "LICENSE-UPSTREAM"]
 authors = [
   { name = "antinomie1" },
 ]
@@ -78,3 +78,7 @@ exclude = ["maimai_mcp.logs*"]
 
 [tool.setuptools.package-data]
 maimai_mcp = [".env.example"]
+
+# uv: `uv sync` / `uv lock` / `uv run maimai` · `uvx maimai-mcp`
+[tool.uv]
+package = true

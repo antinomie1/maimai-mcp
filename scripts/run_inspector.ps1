@@ -1,5 +1,5 @@
 # Launch MCP Inspector against maimai_mcp (stdio).
-# Requires: Node.js + npx, Python 3.10+, maimai_mcp/.env with MAIMAIDX_PATH
+# Requires: Node.js + npx, Python 3.10+, maimai_mcp/.env with STATIC_PATH
 #
 # Usage (from repo root):
 #   .\scripts\run_inspector.ps1
@@ -17,7 +17,7 @@ $env:PYTHONPATH = $RepoRoot
 
 $envFile = Join-Path $RepoRoot "maimai_mcp\.env"
 if (-not (Test-Path $envFile)) {
-    Write-Warning "Missing $envFile — copy maimai_mcp\.env.example and set MAIMAIDX_PATH"
+    Write-Warning "Missing $envFile — copy maimai_mcp\.env.example and set STATIC_PATH"
 }
 
 # Prefer npx inspector; same command as MCP clients use
