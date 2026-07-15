@@ -84,5 +84,6 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          # v0.1.0 already uploaded manually; future tags must bump version
+          # OIDC Trusted Publisher: project maimai-mcp, workflow release.yml, env pypi
+          # skip-existing: same file already on PyPI is OK (e.g. re-run); bump version for new releases
           skip-existing: true

@@ -254,7 +254,7 @@ def run_raw_dump(
     dump_module: str = DEFAULT_RAW_DUMP_MODULE,
     runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
 ) -> tuple[Path, dict[str, str], CommandResult]:
-    # Default: in-process (avoids AstrBot broken pycryptodome subprocess).
+    # Default: in-process (avoids broken pycryptodome in some subprocess hosts).
     # Tests pass a custom runner to simulate dump without network.
     if runner is None:
         return run_raw_dump_inprocess(
@@ -408,7 +408,7 @@ def upload_update_records(
             "Accept": "application/json",
             "Content-Type": "application/json",
             "Import-Token": import_token,
-            "User-Agent": "maimai-mcp/0.2.1",
+            "User-Agent": "maimai-mcp/0.2.4",
         },
         json=payload,
         timeout=timeout,

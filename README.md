@@ -1,11 +1,13 @@
 # maimai-mcp
 
-[![PyPI](https://img.shields.io/badge/PyPI-0.2.1-blue)](https://pypi.org/project/maimai-mcp/0.2.1/)
-[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://pypi.org/project/maimai-mcp/)
+[![PyPI](https://img.shields.io/badge/PyPI-0.1-blue)](https://pypi.org/project/maimai-mcp/0.1/)
+[![Python](https://img.shields.io/badge/python-3.10-blue)](https://pypi.org/project/maimai-mcp/)
+[![MCP Badge](https://lobehub.com/badge/mcp/antinomie1-maimai-mcp?style=flat)](https://lobehub.com/mcp/antinomie1-maimai-mcp)
 
 本地可用的舞萌 DX 查询库 / CLI / MCP 服务：查曲、查分、进度与绘图，供命令行或任意 Agent / 宿主调用。
 
 - 仓库：https://github.com/antinomie1/maimai-mcp  
+- LobeHub：https://lobehub.com/mcp/antinomie1-maimai-mcp  
 - 绘图与业务参考：[Yuri-YuzuChaN/maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX)
 
 Python ≥ 3.10。成绩默认走[水鱼查分器](https://www.diving-fish.com/maimaidx/prober/)，也可切换到[落雪](https://maimai.lxns.net/)（需 Token / OAuth 绑定）。出图默认主题为 **circle**，可按 QQ 改为 **prism_plus**。
@@ -14,56 +16,48 @@ CLI 命令（`maimai …`）与 MCP 工具（`maimai_*`）能力一一对应；A
 
 ---
 
-## 部署（推荐）
+## 安装与配置
 
-### 1. 安装包
+需要 **Python ≥ 3.10**。出图依赖外部 **static** 资源（不随包分发）。
 
-**uv（推荐）**
+### 1. 安装
 
-```bash
-# 安装为全局工具（提供 maimai / maimai-mcp 入口）
-uv tool install maimai-mcp
+任选其一：
 
-# 或临时运行 MCP（不先安装）
-uvx maimai-mcp
-```
+| 方式 | 命令 |
+|------|------|
+| uv 工具（推荐） | `uv tool install maimai-mcp` |
+| uv 临时运行 | `uvx maimai-mcp`（只跑 MCP，不装全局命令） |
+| pip | `pip install maimai-mcp` |
 
-**pip**
+安装后可用：
 
-```bash
-pip install maimai-mcp
-```
+- `maimai` — 命令行
+- `maimai-mcp` — stdio MCP 服务
 
-安装完成后提供两个入口：
+也可用 `python -m maimai_mcp.cli` / `python -m maimai_mcp`。
 
-- `maimai-mcp`：stdio MCP 服务  
-- `maimai`：命令行  
+### 2. 静态资源
 
-也可用模块方式启动：`python -m maimai_mcp` / `python -m maimai_mcp.cli`；uv 环境内可用 `uv run maimai …` / `uv run maimai-mcp`。
+1. 下载并解压资源包：
+   - [Cloudreve](https://cloud.yuzuchan.moe/f/34s7/Resource%20CN1.55.7z)
+   - [OneDrive](https://yuzuai-my.sharepoint.com/:u:/g/personal/yuzu_yuzuchan_moe/IQBGKHie6MAaTZy3rME7Q-ruAVKgXDCKROqz5e25KtMeeVY?e=53eC6a)
+2. 记下其中 **`static` 目录的绝对路径**（即 `STATIC_PATH`）。
+3. 请遵守上游美术与字体相关声明。
 
-### 2. 下载静态资源
+### 3. 环境变量
 
-封面、底图、字体等资源**不随 PyPI 包分发**。请下载并解压资源包，记下其中 **`static` 目录的绝对路径**：
-
-- [Cloudreve](https://cloud.yuzuchan.moe/f/34s7/Resource%20CN1.55.7z)
-- [OneDrive](https://yuzuai-my.sharepoint.com/:u:/g/personal/yuzu_yuzuchan_moe/IQBGKHie6MAaTZy3rME7Q-ruAVKgXDCKROqz5e25KtMeeVY?e=53eC6a)
-
-请遵守上游美术与字体相关声明。
-
-### 3. 配置环境变量
+写在 MCP 客户端的 `env`、系统环境，或 `maimai_mcp/.env`。完整列表见 [`.env.example`](maimai_mcp/.env.example)。
 
 | 变量 | 必填 | 说明 |
 |------|------|------|
 | `STATIC_PATH` | **是** | 上一步 `static` 的绝对路径 |
-| `DIVINGFISH_TOKEN` | 建议 | [水鱼开发者 Token](https://www.diving-fish.com/maimaidx/prober/)，提高接口配额与稳定性（不是 Import-Token） |
-| `OUTPUT_DIR` | 否 | 出图保存目录；不设则使用包内默认位置 |
+| `DIVINGFISH_TOKEN` | 建议 | [水鱼开发者 Token](https://www.diving-fish.com/maimaidx/prober/)，**不是** Import-Token |
+| `OUTPUT_DIR` | 否 | 出图目录 |
 
-完整变量说明见 [`maimai_mcp/.env.example`](maimai_mcp/.env.example)。  
-通过 pip 安装时，请把变量写在 **MCP 客户端的 `env` 块**或系统环境中，不要改 site-packages 里的文件。
+### 4. 接入 MCP
 
-### 4. 接入 MCP 客户端
-
-在客户端（Cursor、Claude Desktop、Grok 等）的 MCP 配置中加入类似：
+推荐配置（`uvx`，不必事先 install）：
 
 ```json
 {
@@ -81,17 +75,14 @@ pip install maimai-mcp
 }
 ```
 
-- 路径请换成真实位置；Windows 示例：`"C:\\\\path\\\\to\\\\static"`。  
-- 已 `uv tool install` / `pip install` 时，可把 `command` 写成 `maimai-mcp`（去掉 `args`）。  
-- 也可用 `"command": "python", "args": ["-m", "maimai_mcp"]`。  
-- 更完整的字段示例见 [`mcp.example.json`](mcp.example.json)。  
-- 面向 Agent 的调用约定与避坑说明见 skill：[`skills/maimai-mcp/`](skills/maimai-mcp/)。
+说明：
 
-启动成功后应能列出 `maimai_*` 工具；需要成绩时请传入玩家 `qq` 或水鱼 `username`。
+- 路径改成你的机器上的真实路径；Windows 示例：`"C:\\path\\to\\static"`
+- 若已 `uv tool install` 或 `pip install`，可改为 `"command": "maimai-mcp"`，并去掉 `args`
+- 更多字段见 [`mcp.example.json`](mcp.example.json)
+- Agent 调用约定见 [`skills/maimai-mcp/`](skills/maimai-mcp/)
 
-### 5. 初始化与自检
-
-表类功能（定数表、牌子表等）首次使用前建议先刷新资源，再用一两项查询确认环境正常：
+### 5. 自检
 
 ```bash
 maimai update tables
@@ -99,42 +90,23 @@ maimai b50 --qq <QQ>
 maimai chart 834
 ```
 
+能出图、客户端能列出 `maimai_*` 工具即可。
+
 ---
 
-## 部署（源码）
+## 从源码开发
 
-适合二次开发或希望跟踪仓库最新改动的场景。
-
-### 1. 克隆并安装
+仅二次开发或跟踪仓库最新代码时需要：
 
 ```bash
 git clone https://github.com/antinomie1/maimai-mcp.git
 cd maimai-mcp
-
-# uv（推荐，使用仓库内 uv.lock）
-uv sync
-# 含开发依赖：uv sync --extra dev
-
-# 或 pip
-pip install -e .
+uv sync                 # 或 pip install -e .
+# 开发依赖：uv sync --extra dev
+cp maimai_mcp/.env.example maimai_mcp/.env   # 至少填 STATIC_PATH
 ```
 
-### 2. 下载静态资源
-
-与 [部署第 2 步](#2-下载静态资源) 相同。可将资源放在仓库旁，或直接使用资源包内的 `static` 路径。
-
-### 3. 写配置
-
-```bash
-cp maimai_mcp/.env.example maimai_mcp/.env
-# 编辑 .env：至少设置 STATIC_PATH，建议填写 DIVINGFISH_TOKEN
-```
-
-也可以不写 `.env`，仅在 MCP 客户端的 `env` 中注入变量（字段含义见 [`.env.example`](maimai_mcp/.env.example)）。
-
-### 4. 接入 MCP 客户端
-
-源码布局下推荐用 `uv run`，并指定仓库为工作目录：
+静态资源与环境变量见上文。MCP 可在仓库目录用 `uv run`：
 
 ```json
 {
@@ -145,7 +117,6 @@ cp maimai_mcp/.env.example maimai_mcp/.env
       "cwd": "/path/to/maimai-mcp",
       "env": {
         "STATIC_PATH": "/path/to/static",
-        "OUTPUT_DIR": "/path/to/output",
         "DIVINGFISH_TOKEN": ""
       }
     }
@@ -153,17 +124,8 @@ cp maimai_mcp/.env.example maimai_mcp/.env
 }
 ```
 
-也可用 `"command": "python", "args": ["-m", "maimai_mcp"]`（需已 `uv sync` 或 `pip install -e .` 且 PATH 指向对应解释器）。
-
-Agent skill 仍在 [`skills/maimai-mcp/`](skills/maimai-mcp/)。本地联调可参考 `scripts/run_inspector.ps1` 与 `scripts/smoke_mcp_tools.py`。
-
-### 5. 初始化与自检
-
-```bash
-uv run maimai update tables
-uv run maimai b50 --qq <QQ>
-# 或：maimai … / python -m maimai_mcp.cli …
-```
+自检：`uv run maimai update tables`、`uv run maimai b50 --qq <QQ>`。  
+联调：`scripts/run_inspector.ps1`、`scripts/smoke_mcp_tools.py`。
 
 ---
 

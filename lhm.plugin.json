@@ -1,0 +1,164 @@
+{
+  "identifier": "antinomie1-maimai-mcp",
+  "name": "maimai-mcp",
+  "version": "0.1",
+  "author": "antinomie1",
+  "authorUrl": "https://github.com/antinomie1",
+  "homepage": "https://github.com/antinomie1/maimai-mcp",
+  "icon": "",
+  "category": "gaming-entertainment",
+  "description": "maimai DX (CN) query library, CLI, and local stdio MCP: Best50, plates, scores, ranking, chart images via Diving-Fish / Lxns. Install: uv tool install maimai-mcp or pip install maimai-mcp; set STATIC_PATH to extracted static assets; run command maimai-mcp.",
+  "tags": [
+    "maimai",
+    "maimaidx",
+    "diving-fish",
+    "lxns",
+    "rhythm-game",
+    "stdio",
+    "python",
+    "pip"
+  ],
+  "localizations": [
+    {
+      "locale": "zh-CN",
+      "name": "maimai-mcp",
+      "description": "舞萌 DX 本地查曲/查分/进度与出图 MCP：Best50、牌子、定数表、上分推荐等（水鱼/落雪）。安装：uv tool install maimai-mcp 或 pip install maimai-mcp；设置 STATIC_PATH 指向解压后的 static 资源；启动命令 maimai-mcp。",
+      "tags": [
+        "舞萌",
+        "maimai",
+        "查分",
+        "水鱼",
+        "落雪",
+        "节奏游戏",
+        "stdio",
+        "python"
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "maimai_search",
+      "description": "Search songs by title, level value (定数), bpm, artist, or charter. Returns JSON list or chart image when one match."
+    },
+    {
+      "name": "maimai_chart",
+      "description": "Draw chart info for a song id/title/alias. Optional player identity for push calc."
+    },
+    {
+      "name": "maimai_score_line",
+      "description": "Compute TAP GREAT tolerance for a score line (diff color + song_id + line%)."
+    },
+    {
+      "name": "maimai_random",
+      "description": "Random chart by level/type/color, then draw chart info."
+    },
+    {
+      "name": "maimai_alias_query",
+      "description": "List aliases for a song name or id."
+    },
+    {
+      "name": "maimai_alias_local_add",
+      "description": "Add a local-only alias (not remote vote)."
+    },
+    {
+      "name": "maimai_update_catalog",
+      "description": "Refresh music data, aliases, and/or regenerate rating/plate table images."
+    },
+    {
+      "name": "maimai_b50",
+      "description": "Best50 image/data. params.source: one-shot divingfish/水鱼 or lxns/落雪. AP50: all_perfect=true, Lxns only."
+    },
+    {
+      "name": "maimai_minfo",
+      "description": "Personal scores for one song (minfo). Use params.source for one-shot 水鱼/落雪."
+    },
+    {
+      "name": "maimai_rise",
+      "description": "Recommend charts to gain rating (上分). params.source for one-shot prober."
+    },
+    {
+      "name": "maimai_ranking",
+      "description": "List or search Diving-Fish RA ranking. Use my=true with qq, or name/username."
+    },
+    {
+      "name": "maimai_fortune",
+      "description": "Daily fortune + jacket for qq or username seed."
+    },
+    {
+      "name": "maimai_mai_what",
+      "description": "Random song; with rise=true bias toward charts that push rating."
+    },
+    {
+      "name": "maimai_rating_table",
+      "description": "Level constant table; progress=true draws personal completion."
+    },
+    {
+      "name": "maimai_plate",
+      "description": "Plate table or progress (e.g. ver=祝 plan=将 mode=progress)."
+    },
+    {
+      "name": "maimai_level_progress",
+      "description": "Progress for a level + plan (e.g. level=14 plan=ap)."
+    },
+    {
+      "name": "maimai_score_list",
+      "description": "Personal score list for a level or constant (e.g. 14.0)."
+    },
+    {
+      "name": "maimai_lookup_song",
+      "description": "Resolve a title/alias: search then draw chart; optional with_minfo for personal scores."
+    },
+    {
+      "name": "maimai_player_overview",
+      "description": "Compose b50 image/data with optional rise recommendation JSON."
+    },
+    {
+      "name": "maimai_push_plan",
+      "description": "Recommend rating gains and draw the first recommended chart."
+    },
+    {
+      "name": "maimai_plate_status",
+      "description": "Plate progress/table (thin alias of maimai_plate for agent discoverability)."
+    },
+    {
+      "name": "maimai_user_show",
+      "description": "Show theme/service/Import-Token bind status for a player QQ (must pass qq)."
+    },
+    {
+      "name": "maimai_user_set_theme",
+      "description": "Set theme: circle (default) or prism_plus. Stored per QQ in user.db."
+    },
+    {
+      "name": "maimai_user_set_source",
+      "description": "Set Diving-Fish or Lxns as default score source for a QQ."
+    },
+    {
+      "name": "maimai_user_bind_lxns",
+      "description": "Get Lxns authorize URL, or submit code to finish binding."
+    },
+    {
+      "name": "maimai_user_bind_import_token",
+      "description": "Bind player QQ to a Diving-Fish score Import-Token (stored in user.db). Not the developer DIVINGFISH_TOKEN."
+    },
+    {
+      "name": "maimai_update_records",
+      "description": "QR login → dump → convert → upload. params.source required: divingfish | lxns | both."
+    },
+    {
+      "name": "maimai_refresh_identity",
+      "description": "Pull friend list, groups, and group members via NapCat HTTP API. Requires NAPCAT_BASE_URL."
+    },
+    {
+      "name": "maimai_identity_status",
+      "description": "Show identity cache path, stats, and configured NapCat base URL."
+    },
+    {
+      "name": "maimai_resolve_qq",
+      "description": "Lookup player QQ from identity cache (nickname / card / waterfish name)."
+    },
+    {
+      "name": "maimai_get_qq_identity",
+      "description": "Read nickname / group card for a QQ from identity cache if present."
+    }
+  ]
+}
