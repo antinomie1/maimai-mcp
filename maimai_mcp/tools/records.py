@@ -96,7 +96,6 @@ def register(mcp: FastMCP) -> None:
                 return FeatureResult.failure(str(e), code="workflow_error")
             data = {
                 "qq": result["qq"],
-                "segaUserId": result.get("segaUserId"),
                 "source": result.get("source"),
                 "sources": result.get("sources"),
                 "source_label": result.get("source_label"),

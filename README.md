@@ -1,6 +1,6 @@
 # maimai-mcp
 
-[![PyPI](https://img.shields.io/badge/PyPI-0.1-blue)](https://pypi.org/project/maimai-mcp/0.1/)
+[![PyPI](https://img.shields.io/badge/PyPI-0.2-blue)](https://pypi.org/project/maimai-mcp/0.2/)
 [![Python](https://img.shields.io/badge/python-3.10-blue)](https://pypi.org/project/maimai-mcp/)
 [![MCP Badge](https://lobehub.com/badge/mcp/antinomie1-maimai-mcp?style=flat)](https://lobehub.com/mcp/antinomie1-maimai-mcp)
 

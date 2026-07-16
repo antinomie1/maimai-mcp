@@ -56,7 +56,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ru.add_argument("--qq", type=int, required=True)
     ru.add_argument("--qr-content", required=True, help="二维码解析串（SGWC...）")
     ru.add_argument("--keyship", default=None)
-    ru.add_argument("--logoutid", type=int, choices=(1, 2), default=None)
+    ru.add_argument("--logoutid", type=int, choices=(1, 2, 5), default=None)
     ru.add_argument("--title-ver", default=None)
     ru.add_argument("--timeout", type=float, default=240.0)
     ru.add_argument("--output-dir", default=None)

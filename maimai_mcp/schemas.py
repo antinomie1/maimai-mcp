@@ -363,7 +363,10 @@ class UpdateRecordsInput(StrictModel):
         validation_alias=AliasChoices("qr_content", "qrContent"),
     )
     keyship: str | None = Field(default=None, description="keychip / keyship id")
-    logoutid: Literal[1, 2] | None = Field(default=None)
+    logoutid: Literal[1, 2, 5] | None = Field(
+        default=None,
+        description="UserLogout type; default 5 (title-server score sync style)",
+    )
     title_ver: str | None = Field(
         default=None,
         description="Title version e.g. 1.55.00",

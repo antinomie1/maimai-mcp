@@ -4,7 +4,8 @@ import unittest
 
 from maimai_mcp.core.official import aes_cbc
 from maimai_mcp.core.official.aes_cbc import aes_backend, aes_cbc_decrypt, aes_cbc_encrypt
-from maimai_mcp.core.official.dump import GAME_AES_IV, GAME_AES_KEY
+from maimai_mcp.core.official.protocol import AES_IV as GAME_AES_IV
+from maimai_mcp.core.official.protocol import AES_KEY as GAME_AES_KEY
 
 
 class AesCbcTests(unittest.TestCase):

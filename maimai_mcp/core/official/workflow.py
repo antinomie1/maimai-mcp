@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Bind Import-Token in user.db and run QR → raw → update_records workflow."""
+"""QR → 官服成绩 → convert → 水鱼/落雪上传。"""
 
 from __future__ import annotations
 
+import json
 import os
 import re
-import subprocess
-import sys
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -19,23 +17,28 @@ except ImportError as exc:  # pragma: no cover
         "missing dependency: requests. Install with: python -m pip install requests"
     ) from exc
 
+from .client import (
+    DEFAULT_KEYCHIP_ID,
+    DEFAULT_PLACE_ID,
+    DEFAULT_REGION_ID,
+    MaimaiOfficialClient,
+)
 from .convert import convert_file
+from .protocol import (
+    ChimeSessionError,
+    OfficialProtocolError,
+    OfficialTitleServerError,
+)
 
-DEFAULT_RAW_DUMP_MODULE = "maimai_mcp.core.official.dump"
-DEFAULT_DIVING_FISH_URL = "https://www.diving-fish.com/api/maimaidxprober/player/update_records"
+DEFAULT_DIVING_FISH_URL = (
+    "https://www.diving-fish.com/api/maimaidxprober/player/update_records"
+)
 DEFAULT_OUTPUT_DIR = Path.home() / ".cache" / "maimai-record-imports"
 QQ_RE = re.compile(r"^\d{5,12}$")
 
 
 class WorkflowError(RuntimeError):
     pass
-
-
-@dataclass(frozen=True)
-class CommandResult:
-    returncode: int
-    stdout: str
-    stderr: str
 
 
 def utc_now() -> str:
@@ -69,7 +72,6 @@ def output_dir_from_env() -> Path:
 
 
 async def bind_import_token(qq: Any, import_token: Any) -> dict[str, Any]:
-    """Store Diving-Fish Import-Token on the local user.db row for QQ."""
     from maimai_mcp.core.database.qq import update_user
 
     qq_text = normalize_qq(qq)
@@ -112,7 +114,6 @@ async def get_import_token(qq: Any) -> str:
 
 
 async def ensure_music_data_cache(*, refresh: bool = False) -> Path:
-    """Ensure Diving-Fish music_data.json cache exists (API 3.1.4)."""
     from maimai_mcp.resources import music_file
 
     if music_file.is_file() and not refresh:
@@ -135,41 +136,6 @@ async def ensure_music_data_cache(*, refresh: bool = False) -> Path:
     return music_file
 
 
-def run_command(
-    command: list[str],
-    *,
-    input_text: str | None = None,
-    timeout: float = 180.0,
-    cwd: Path | None = None,
-    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
-) -> CommandResult:
-    completed = runner(
-        command,
-        input=input_text,
-        text=True,
-        cwd=str(cwd) if cwd is not None else None,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=timeout,
-        check=False,
-    )
-    return CommandResult(
-        returncode=int(completed.returncode),
-        stdout=str(completed.stdout or ""),
-        stderr=str(completed.stderr or ""),
-    )
-
-
-def parse_key_value_lines(text: str) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for raw in text.splitlines():
-        if "=" not in raw:
-            continue
-        key, value = raw.split("=", 1)
-        values[key.strip()] = value.strip()
-    return values
-
-
 def make_run_dir(base: Path, qq: str) -> Path:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     path = base / f"{qq}_{stamp}_{os.getpid()}"
@@ -177,114 +143,57 @@ def make_run_dir(base: Path, qq: str) -> Path:
     return path
 
 
-def run_raw_dump_inprocess(
-    *,
-    qr_content: str,
-    run_dir: Path,
-    keyship: str | None = None,
-    logoutid: int | None = None,
-    title_ver: str | None = None,
-) -> tuple[Path, dict[str, str], CommandResult]:
-    """Run dump in the current interpreter (uses aes_cbc backends; no broken Crypto.pyd)."""
-    import io
-    from contextlib import redirect_stderr, redirect_stdout
-
-    from . import dump as dump_mod
-
-    argv = [
-        "maimai_mcp.core.official.dump",
-        "--output-dir",
-        str(run_dir / "raw"),
-        "--qr-content",
-        qr_content.strip(),
-    ]
-    if keyship:
-        argv.extend(["--keychip-id", keyship])
-    if logoutid is not None:
-        if logoutid not in (1, 2):
-            raise WorkflowError("--logoutid 只能是 1 或 2。")
-        argv.extend(["--logout-type", str(logoutid)])
-    if title_ver:
-        argv.extend(["--title-ver", title_ver])
-
-    out_buf = io.StringIO()
-    err_buf = io.StringIO()
-    old_argv = sys.argv
-    try:
-        sys.argv = argv
-        with redirect_stdout(out_buf), redirect_stderr(err_buf):
-            try:
-                code = int(dump_mod.main())
-            except SystemExit as exc:
-                code = int(exc.code) if isinstance(exc.code, int) else 1
-            except Exception as exc:  # noqa: BLE001
-                print(f"flow_error={exc}", file=err_buf)
-                code = 1
-    finally:
-        sys.argv = old_argv
-
-    result = CommandResult(returncode=code, stdout=out_buf.getvalue(), stderr=err_buf.getvalue())
-    values = parse_key_value_lines(result.stdout)
-    raw_path_text = values.get("full_json_path")
-    raw_path = Path(raw_path_text).expanduser() if raw_path_text else Path()
-    if result.returncode != 0 or values.get("flow_success") != "true" or not raw_path.is_file():
-        detail = (
-            values.get("flow_error")
-            or result.stderr.strip()
-            or result.stdout.strip()
-            or "raw dump 未成功生成 JSON。"
-        )
-        # Keep user-facing errors short (no full traceback dump)
-        if "Traceback" in detail:
-            lines = [ln for ln in detail.splitlines() if ln.strip()]
-            detail = lines[-1] if lines else detail[:500]
-        raise WorkflowError(f"获取原始成绩失败：{detail}")
-    return raw_path, values, result
-
-
-def run_raw_dump(
-    *,
-    qr_content: str,
-    run_dir: Path,
-    keyship: str | None = None,
-    logoutid: int | None = None,
-    title_ver: str | None = None,
-    timeout: float = 180.0,
-    python: str = sys.executable,
-    dump_module: str = DEFAULT_RAW_DUMP_MODULE,
-    runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
-) -> tuple[Path, dict[str, str], CommandResult]:
-    # Default: in-process (avoids broken pycryptodome in some subprocess hosts).
-    # Tests pass a custom runner to simulate dump without network.
-    if runner is None:
-        return run_raw_dump_inprocess(
-            qr_content=qr_content,
-            run_dir=run_dir,
-            keyship=keyship,
-            logoutid=logoutid,
-            title_ver=title_ver,
-        )
-
-    command = [python, "-m", dump_module, "--output-dir", str(run_dir / "raw")]
-    if keyship:
-        command.extend(["--keyship-id", keyship])
-    if logoutid is not None:
-        if logoutid not in (1, 2):
-            raise WorkflowError("--logoutid 只能是 1 或 2。")
-        command.extend(["--logout-type", str(logoutid)])
-    if title_ver:
-        command.extend(["--title-ver", title_ver])
-
-    result = run_command(
-        command, input_text=qr_content.strip() + "\n", timeout=timeout, runner=runner
+def write_raw_export(run_dir: Path, export: dict[str, Any]) -> Path:
+    raw_dir = run_dir / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    path = raw_dir / f"sdgb155_full_dump_{datetime.now():%Y%m%d_%H%M%S}.json"
+    path.write_text(
+        json.dumps(export, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
-    values = parse_key_value_lines(result.stdout)
-    raw_path_text = values.get("full_json_path")
-    raw_path = Path(raw_path_text).expanduser() if raw_path_text else Path()
-    if result.returncode != 0 or values.get("flow_success") != "true" or not raw_path.is_file():
-        detail = values.get("flow_error") or result.stderr.strip() or "raw dump 未成功生成 JSON。"
-        raise WorkflowError(f"获取原始成绩失败：{detail}")
-    return raw_path, values, result
+    return path
+
+
+def fetch_official_raw(
+    qr_content: str,
+    *,
+    run_dir: Path,
+    keyship: str | None = None,
+    place_id: int = DEFAULT_PLACE_ID,
+    region_id: int = DEFAULT_REGION_ID,
+    timeout: float = 180.0,
+    fetch_fn: Callable[[str], dict[str, Any]] | None = None,
+) -> Path:
+    """SGID → 官服成绩 JSON。fetch_fn 可注入测试用假数据（返回 to_raw_export 形状）。"""
+    qr = str(qr_content or "").strip()
+    if not qr:
+        raise WorkflowError("二维码解析内容不能为空。")
+
+    try:
+        if fetch_fn is not None:
+            export = fetch_fn(qr)
+        else:
+            client = MaimaiOfficialClient(
+                keychip_id=keyship or DEFAULT_KEYCHIP_ID,
+                place_id=place_id,
+                region_id=region_id,
+                timeout=timeout,
+            )
+            export = client.fetch_from_sgid(qr).to_raw_export()
+    except ChimeSessionError as exc:
+        raise WorkflowError(f"获取原始成绩失败：{exc}") from exc
+    except OfficialTitleServerError as exc:
+        raise WorkflowError(f"获取原始成绩失败：{exc}") from exc
+    except OfficialProtocolError as exc:
+        raise WorkflowError(f"获取原始成绩失败：{exc}") from exc
+    except WorkflowError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise WorkflowError(f"获取原始成绩失败：{exc}") from exc
+
+    if not isinstance(export, dict) or "GetUserMusicApi" not in export:
+        raise WorkflowError("获取原始成绩失败：返回数据缺少 GetUserMusicApi。")
+    return write_raw_export(run_dir, export)
 
 
 SOURCE_LABELS = {
@@ -512,17 +421,15 @@ async def update_records_workflow(
     refresh_music: bool = False,
     source: Any = None,
     targets: Any = None,
-    python: str = sys.executable,
-    dump_module: str = DEFAULT_RAW_DUMP_MODULE,
     music_data: Path | None = None,
-    runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+    fetch_fn: Callable[[str], dict[str, Any]] | None = None,
     post: Callable[..., Any] = requests.post,
 ) -> dict[str, Any]:
+    del logoutid, title_ver  # kept on API for callers; unused after dump merge
     qq_text = normalize_qq(qq)
     qr_text = str(qr_content or "").strip()
     if not qr_text:
         raise WorkflowError("二维码解析内容不能为空。")
-    # Prefer explicit source=; accept legacy targets= alias
     source_list = normalize_sources(source if source is not None else targets)
     need_df = "divingfish" in source_list
     need_lxns = "lxns" in source_list
@@ -537,16 +444,12 @@ async def update_records_workflow(
 
     run_dir = make_run_dir((output_dir or output_dir_from_env()), qq_text)
 
-    raw_json, raw_values, _ = run_raw_dump(
-        qr_content=qr_text,
+    raw_json = fetch_official_raw(
+        qr_text,
         run_dir=run_dir,
         keyship=keyship,
-        logoutid=logoutid,
-        title_ver=title_ver,
         timeout=timeout,
-        python=python,
-        dump_module=dump_module,
-        runner=runner,
+        fetch_fn=fetch_fn,
     )
 
     uploads: dict[str, Any] = {}
@@ -621,14 +524,10 @@ async def update_records_workflow(
             lx_line += f"，有 {fail_n} 批失败"
         parts.append(lx_line)
 
-    user_id = raw_values.get("user_id") or raw_values.get("userId") or ""
     text = f"成绩上传完成（数据源：{source_label}）：" + "；".join(parts) + "。"
-    if user_id:
-        text += f"\nSEGA userId: {user_id}"
     return {
         "ok": True,
         "qq": qq_text,
-        "segaUserId": user_id,
         "uploads": uploads,
         "text": text,
         **result_extra,

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -37,7 +36,7 @@ class OfficialWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("import-token-abcdef", result["text"])
         self.assertTrue(result["import_token_bound"])
 
-    async def test_update_workflow_dump_convert_upload(self) -> None:
+    async def test_update_workflow_fetch_convert_upload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             music_data = root / "music_data.json"
@@ -46,46 +45,26 @@ class OfficialWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 encoding="utf-8",
             )
             output_dir = root / "runs"
-            calls: list[dict[str, Any]] = []
 
-            def fake_runner(
-                command: list[str], **kwargs: Any
-            ) -> subprocess.CompletedProcess[str]:
-                calls.append({"command": command, **kwargs})
-                self.assertIn("maimai_mcp.core.official.dump", command)
-                output_arg = Path(command[command.index("--output-dir") + 1])
-                output_arg.mkdir(parents=True, exist_ok=True)
-                raw_path = output_arg / "raw.json"
-                raw_path.write_text(
-                    json.dumps(
-                        {
-                            "GetUserMusicApi": {
-                                "userMusicList": [
+            def fake_fetch(_qr: str) -> dict[str, Any]:
+                return {
+                    "GetUserMusicApi": {
+                        "userMusicList": [
+                            {
+                                "userMusicDetailList": [
                                     {
-                                        "userMusicDetailList": [
-                                            {
-                                                "musicId": 383,
-                                                "level": 3,
-                                                "achievement": 1000000,
-                                                "deluxscoreMax": 2458,
-                                                "comboStatus": 1,
-                                                "syncStatus": 5,
-                                            }
-                                        ]
+                                        "musicId": 383,
+                                        "level": 3,
+                                        "achievement": 1000000,
+                                        "deluxscoreMax": 2458,
+                                        "comboStatus": 1,
+                                        "syncStatus": 5,
                                     }
                                 ]
                             }
-                        },
-                        ensure_ascii=False,
-                    ),
-                    encoding="utf-8",
-                )
-                return subprocess.CompletedProcess(
-                    command,
-                    0,
-                    stdout=f"flow_success=true\nfull_json_path={raw_path}\nuser_id=42\n",
-                    stderr="",
-                )
+                        ]
+                    }
+                }
 
             with (
                 patch.object(
@@ -107,9 +86,10 @@ class OfficialWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     source="divingfish",
                     output_dir=output_dir,
                     music_data=music_data,
-                    runner=fake_runner,
+                    fetch_fn=fake_fetch,
                     post=lambda *a, **k: FakeResponse(),
                 )
+                self.assertTrue(Path(result["rawJsonPath"]).is_file())
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["source"], "divingfish")
@@ -117,10 +97,10 @@ class OfficialWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["source_label"], "水鱼")
         self.assertEqual(result["divingfish"]["converted"], 1)
         self.assertEqual(result["divingfish"]["skipped"], 0)
-        self.assertEqual(result["segaUserId"], "42")
-        self.assertEqual(len(calls), 1)
+        self.assertNotIn("segaUserId", result)
         self.assertIn("数据源：水鱼", result["text"])
         self.assertNotIn("import-token-abcdef", result["text"])
+        self.assertNotIn("SEGA userId", result["text"])
 
     def test_source_required(self) -> None:
         with self.assertRaises(workflow.WorkflowError) as ctx:

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maimai-mcp"
-version = "0.1"
+version = "0.2"
 description = "maimaiDX query library, CLI and MCP (stdio) server for maimai DX"
 readme = "README.md"
 requires-python = ">=3.10"
