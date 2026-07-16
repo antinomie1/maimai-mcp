@@ -23,6 +23,7 @@ venv/
 logs/
 output/
 qq-identity-cache/
+player-cache/
 *.png
 !docs/**/*.png
 static/

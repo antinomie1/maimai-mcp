@@ -99,6 +99,104 @@ class RefreshIdentityInput(StrictModel):
     )
 
 
+class GroupRatingRankInput(StrictModel):
+    group_id: int = Field(
+        ...,
+        ge=1,
+        description="QQ 群号（不是玩家 QQ）。查榜时按需拉分；新鲜缓存复用。",
+    )
+    sort_order: Literal["asc", "desc"] = Field(
+        default="desc", description="desc=高分在前，asc=低分在前"
+    )
+    output_limit: int | None = Field(
+        default=20,
+        ge=1,
+        le=500,
+        description="输出条数上限；不传或配合名次窗口使用",
+    )
+    start_rank: int | None = Field(
+        default=None, ge=1, description="名次起点（1-based），须与 end_rank 成对"
+    )
+    end_rank: int | None = Field(
+        default=None, ge=1, description="名次终点（含），须与 start_rank 成对"
+    )
+    rating_min: int | None = Field(default=None, ge=0, description="Rating 下限（含）")
+    rating_max: int | None = Field(default=None, ge=0, description="Rating 上限（含）")
+    force_refresh: bool = Field(
+        default=False, description="忽略成绩缓存，查榜时全部重拉"
+    )
+    max_concurrency: int | None = Field(
+        default=None, ge=1, le=10, description="并发拉取人数，默认 3（或环境变量）"
+    )
+    query_delay_ms: int | None = Field(
+        default=None,
+        ge=0,
+        le=5000,
+        description="成员间启动间隔毫秒，默认 250，用于限速",
+    )
+    max_members: int | None = Field(
+        default=None, ge=1, le=2000, description="最多处理多少名群成员（限流/测试）"
+    )
+
+
+class GroupSongRankInput(StrictModel):
+    group_id: int = Field(
+        ...,
+        ge=1,
+        description="QQ 群号。查本榜时才按成员拉该曲成绩；新鲜缓存复用。",
+    )
+    song: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        description="曲目 id / 标题 / 别名",
+    )
+    level_index: int | None = Field(
+        default=None,
+        ge=0,
+        le=4,
+        description="0=Basic … 4=Re:Master；默认取缓存中出现过的最高难度",
+    )
+    sort_by: Literal["achievements", "rating", "dxScore"] = Field(
+        default="achievements", description="排序字段"
+    )
+    sort_order: Literal["asc", "desc"] = Field(default="desc")
+    output_limit: int | None = Field(default=20, ge=1, le=500)
+    start_rank: int | None = Field(default=None, ge=1)
+    end_rank: int | None = Field(default=None, ge=1)
+    force_refresh: bool = Field(default=False, description="忽略缓存强制重拉")
+    max_concurrency: int | None = Field(default=None, ge=1, le=10)
+    query_delay_ms: int | None = Field(default=None, ge=0, le=5000)
+    max_members: int | None = Field(default=None, ge=1, le=2000)
+
+
+class GroupMemberRankInput(StrictModel):
+    group_id: int | None = Field(
+        default=None,
+        ge=1,
+        description="QQ 群号；若该玩家只在一个缓存群中可省略",
+    )
+    qq: int | None = Field(default=None, ge=1, description="玩家 QQ（禁止填群号）")
+    target: str | None = Field(
+        default=None,
+        max_length=64,
+        description="未给 qq 时：昵称 / 群名片 / 水鱼名（依赖身份缓存）",
+    )
+    song: str | None = Field(
+        default=None,
+        max_length=128,
+        description="有则查该曲群内名次，无则查 Rating 名次",
+    )
+    level_index: int | None = Field(default=None, ge=0, le=4)
+    context_size: int = Field(
+        default=3, ge=0, le=10, description="目标上下各展示多少人"
+    )
+    force_refresh: bool = Field(default=False)
+    max_concurrency: int | None = Field(default=None, ge=1, le=10)
+    query_delay_ms: int | None = Field(default=None, ge=0, le=5000)
+    max_members: int | None = Field(default=None, ge=1, le=2000)
+
+
 class B50Input(PlayerArgs, ImageOutArgs):
     all_perfect: bool = Field(
         default=False,

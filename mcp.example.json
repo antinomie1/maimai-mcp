@@ -18,7 +18,8 @@
         "REDIRECT_URI": "urn:ietf:wg:oauth:2.0:oob",
         "NAPCAT_BASE_URL": "http://127.0.0.1:3000",
         "NAPCAT_ACCESS_TOKEN": "",
-        "QQ_IDENTITY_CACHE_DIR": ""
+        "QQ_IDENTITY_CACHE_DIR": "",
+        "PLAYER_CACHE_DIR": ""
       }
     }
   }

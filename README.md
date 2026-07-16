@@ -7,7 +7,6 @@
 本地可用的舞萌 DX 查询库 / CLI / MCP 服务：查曲、查分、进度与绘图，供命令行或任意 Agent / 宿主调用。
 
 - 仓库：https://github.com/antinomie1/maimai-mcp  
-- LobeHub：https://lobehub.com/mcp/antinomie1-maimai-mcp  
 - 绘图与业务参考：[Yuri-YuzuChaN/maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX)
 
 Python ≥ 3.10。成绩默认走[水鱼查分器](https://www.diving-fish.com/maimaidx/prober/)，也可切换到[落雪](https://maimai.lxns.net/)（需 Token / OAuth 绑定）。出图默认主题为 **circle**，可按 QQ 改为 **prism_plus**。
@@ -54,6 +53,9 @@ CLI 命令（`maimai …`）与 MCP 工具（`maimai_*`）能力一一对应；A
 | `STATIC_PATH` | **是** | 上一步 `static` 的绝对路径 |
 | `DIVINGFISH_TOKEN` | 建议 | [水鱼开发者 Token](https://www.diving-fish.com/maimaidx/prober/)，**不是** Import-Token |
 | `OUTPUT_DIR` | 否 | 出图目录 |
+| `NAPCAT_BASE_URL` | 否 | 身份缓存 / 群名册（OneBot HTTP） |
+| `QQ_IDENTITY_CACHE_DIR` | 否 | 身份缓存目录，默认 `./qq-identity-cache` |
+| `PLAYER_CACHE_DIR` | 否 | 群榜用成绩缓存目录，默认 `./player-cache` |
 
 ### 4. 接入 MCP
 
@@ -224,16 +226,40 @@ maimai records update --qq <QQ> --qr-content 'SGWC...' --source both
 MCP：`maimai_update_records` 的 **`params.source` 必填**：`divingfish` | `lxns` | `both`（也可用 `target` 别名）。  
 响应含 `source` / `sources` / `source_label`。
 
-### 可选：身份缓存（需 OneBot / NapCat）
+### 可选：身份缓存与群榜
 
-常规查分请直接传 `params.qq`，不必依赖昵称反查。配置 HTTP API 后可拉取好友 / 群成员到本地缓存。
+两套本地数据，职责分离：
+
+| 缓存 | 环境变量 | 内容 | 写入时机 |
+|------|----------|------|----------|
+| 身份 | `QQ_IDENTITY_CACHE_DIR`（默认 `./qq-identity-cache`） | 群成员、群名片、好友昵称 | `maimai_refresh_identity`（需 `NAPCAT_BASE_URL`） |
+| 成绩 | `PLAYER_CACHE_DIR`（默认 `./player-cache`） | Rating / 单曲快照 | **查群榜时按需拉取**；个人 `b50`/`minfo` 也会旁路写入 |
+
+**只有查群榜时才会去拉成员成绩**（默认并发 3、启动间隔 250ms）；新鲜缓存（默认 24h，`PLAYER_CACHE_TTL_SECONDS`）会复用，避免重复打满 API。后台不会预拉全群。
+
+#### 身份
 
 | 工具 | 说明 |
 |------|------|
-| `maimai_refresh_identity` | 通过 OneBot / NapCat 刷新好友与群成员身份缓存 |
-| `maimai_identity_status` | 查看身份缓存状态 |
-| `maimai_resolve_qq` | 按昵称 / 群名片从缓存反查 QQ |
-| `maimai_get_qq_identity` | 按 QQ 读取缓存中的昵称等信息 |
+| `maimai_refresh_identity` | 经 OneBot / NapCat 刷新好友与群成员（不查成绩） |
+| `maimai_identity_status` | 身份缓存状态 |
+| `maimai_resolve_qq` | 昵称 / 群名片 → QQ |
+| `maimai_get_qq_identity` | 按 QQ 读缓存昵称等信息 |
+
+常规查分请直接传 `params.qq`，不必依赖昵称反查。
+
+#### 群内榜
+
+| 工具 | 说明 |
+|------|------|
+| `maimai_group_rating_rank` | 本群 Rating 榜（查榜时按需拉分） |
+| `maimai_group_song_rank` | 本群某曲成绩榜（查榜时按需拉该曲） |
+| `maimai_group_member_rank` | 某人在群内 Rating 或某曲的名次 |
+| `maimai_player_cache_status` | 成绩缓存覆盖统计 |
+
+与 `maimai_ranking`（水鱼公开总榜）不同：群榜只比**本群成员**。
+
+推荐：先有身份名册 → 用户要榜时直接调群榜工具。限速可用 `GROUP_RANK_MAX_CONCURRENCY` / `GROUP_RANK_QUERY_DELAY_MS`。Agent 约定见 [`skills/maimai-mcp/`](skills/maimai-mcp/)。
 
 ---
 

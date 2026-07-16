@@ -159,6 +159,22 @@
     {
       "name": "maimai_get_qq_identity",
       "description": "Read nickname / group card for a QQ from identity cache if present."
+    },
+    {
+      "name": "maimai_group_rating_rank",
+      "description": "本群 Rating 榜。查榜时按需拉分，新鲜缓存复用；名册来自身份缓存。"
+    },
+    {
+      "name": "maimai_group_song_rank",
+      "description": "本群单曲榜。查榜时按成员拉该曲成绩，缓存复用。需 group_id + song。"
+    },
+    {
+      "name": "maimai_group_member_rank",
+      "description": "某人在本群 Rating 或某曲的名次；查榜时按需构建整榜。"
+    },
+    {
+      "name": "maimai_player_cache_status",
+      "description": "本地成绩缓存覆盖统计（无网络）。"
     }
   ]
 }

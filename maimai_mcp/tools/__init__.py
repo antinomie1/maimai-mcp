@@ -6,10 +6,11 @@ from mcp.server.fastmcp import FastMCP
 
 
 def register_all(mcp: FastMCP) -> None:
-    from . import catalog, player, records, tables, user, workflow
+    from . import catalog, group_rank, player, records, tables, user, workflow
 
     catalog.register(mcp)
     player.register(mcp)
+    group_rank.register(mcp)
     tables.register(mcp)
     user.register(mcp)
     records.register(mcp)

@@ -227,6 +227,99 @@ def get_identity(qq: Any, group_id: Any = None) -> dict[str, Any] | None:
     }
 
 
+def list_group_members(group_id: Any) -> list[dict[str, Any]]:
+    """Members of a group from identity cache (no network).
+
+    Each item: userId, displayName, nickname, card, groupName.
+    """
+    gid = _norm_id(group_id)
+    if not gid:
+        return []
+    cache = read_cache()
+    users = cache.get("users") if isinstance(cache.get("users"), dict) else {}
+    members: list[dict[str, Any]] = []
+    for qq, user in users.items():
+        if not isinstance(user, dict):
+            continue
+        groups = user.get("groups") if isinstance(user.get("groups"), dict) else {}
+        entry = groups.get(gid)
+        if not isinstance(entry, dict):
+            continue
+        display = (
+            _opt_str(entry.get("groupNickname"))
+            or _opt_str(entry.get("card"))
+            or _opt_str(entry.get("nickname"))
+            or _opt_str(user.get("qqNickname"))
+            or qq
+        )
+        members.append(
+            {
+                "userId": str(qq),
+                "displayName": display,
+                "nickname": _opt_str(entry.get("nickname"))
+                or _opt_str(user.get("qqNickname")),
+                "card": _opt_str(entry.get("card")),
+                "groupName": _opt_str(entry.get("groupName")),
+            }
+        )
+    members.sort(key=lambda m: m["userId"])
+    return members
+
+
+def list_user_group_ids(qq: Any) -> list[str]:
+    """Group ids a QQ belongs to in identity cache."""
+    key = _norm_id(qq)
+    if not key:
+        return []
+    cache = read_cache()
+    user = cache.get("users", {}).get(key)
+    if not isinstance(user, dict):
+        return []
+    groups = user.get("groups") if isinstance(user.get("groups"), dict) else {}
+    return sorted(str(gid) for gid, entry in groups.items() if isinstance(entry, dict))
+
+
+def infer_group_id(qq: Any) -> str | None:
+    """If the QQ is in exactly one cached group, return that group id."""
+    groups = list_user_group_ids(qq)
+    if len(groups) == 1:
+        return groups[0]
+    return None
+
+
+def upsert_waterfish_profile(
+    qq: Any,
+    *,
+    nickname: Any = None,
+    username: Any = None,
+) -> None:
+    """Best-effort write of Diving-Fish display name into identity cache."""
+    key = _norm_id(qq)
+    if not key:
+        return
+    nick = _opt_str(nickname)
+    uname = _opt_str(username)
+    if not nick and not uname:
+        return
+    try:
+        cache = read_cache()
+        user = cache.get("users", {}).get(key)
+        if not isinstance(user, dict):
+            # Do not create orphan users without group/friend context.
+            return
+        changed = False
+        if nick and user.get("waterfishNickname") != nick:
+            user["waterfishNickname"] = nick
+            changed = True
+        if uname and user.get("waterfishUsername") != uname:
+            user["waterfishUsername"] = uname
+            changed = True
+        if changed:
+            write_cache(cache)
+    except Exception:
+        return
+
+
 def cache_status() -> dict[str, Any]:
     cache = read_cache()
     return {
