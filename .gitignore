@@ -1,0 +1,25 @@
+# Generated files and build artifacts
+/target
+/output
+/data
+/examples
+
+# Environment and sensitive configuration
+.env
+.env.*
+!.env.example
+
+# Static assets (large binaries/fonts/covers)
+/static
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs and test outputs
+*.log
