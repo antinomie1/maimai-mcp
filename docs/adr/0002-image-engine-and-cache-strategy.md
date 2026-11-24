@@ -17,7 +17,7 @@ Date: 2026-08-18
 * **零系统 C 依赖**：无跨平台 C 库编译障碍。
 
 ## 决策结果
-* **技术选型**：纯 Rust 组合 `image` + `imageproc` + `ab_glyph`。
+* **技术选型**：纯 Rust 组合 `image` + `ab_glyph`（光栅化）+ `rustybuzz`（HarfBuzz 整形，复刻 Pillow/libraqm 的排版与锚点）。
 * **多线程策略**：采用 `rayon` 并发读取/裁剪 50 首曲目封面并并行合成局部 Tile。
 * **内存分层缓存（吸取 Legacy 优点）**：
   1. **UI 静态小图标/边框/背景**：常驻内存（数十张小图，总内存 < 5MB）。

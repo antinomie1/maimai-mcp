@@ -1,198 +1,259 @@
-use ab_glyph::{Font, PxScale, ScaleFont};
-use image::{imageops, Rgba, RgbaImage};
-use imageproc::drawing::draw_text_mut;
+//! Image primitives matching Pillow semantics: cached assets, premultiplied
+//! bicubic resize, `alpha_composite`, gradients and frosted cards.
 
-pub struct CanvasHelper;
+use crate::config::CONFIG;
+use crate::core::models::Theme;
+use image::{RgbaImage, imageops};
+use rayon::prelude::*;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock, RwLock};
 
-impl CanvasHelper {
-    /// Overlay `source` on `target` at (x, y) with alpha compositing
-    pub fn overlay(target: &mut RgbaImage, source: &RgbaImage, x: i64, y: i64) {
-        imageops::overlay(target, source, x, y);
-    }
+pub fn pic(name: &str) -> PathBuf {
+    CONFIG.static_dir.join("mai/pic").join(name)
+}
 
-    /// Resize image using Lanczos3
-    pub fn resize(img: &RgbaImage, nwidth: u32, nheight: u32) -> RgbaImage {
-        imageops::resize(img, nwidth, nheight, imageops::FilterType::Lanczos3)
-    }
+pub fn theme_pic(theme: Theme, name: &str) -> PathBuf {
+    CONFIG.static_dir.join("mai/pic").join(theme.dir()).join(name)
+}
 
-    /// Measure text pixel width using font and scale
-    pub fn measure_text_width<F: Font>(text: &str, font: &F, scale_size: f32) -> f32 {
-        let scale = PxScale::from(scale_size);
-        let scaled_font = font.as_scaled(scale);
-        let mut width = 0.0;
-        for ch in text.chars() {
-            width += scaled_font.h_advance(scaled_font.glyph_id(ch));
+pub fn mai_dir(sub: &str) -> PathBuf {
+    CONFIG.static_dir.join("mai").join(sub)
+}
+
+/// Upstream `song_chart`: `cover/<id % 10000>.png`, falling back to `0.png`.
+pub fn cover_path(song_id: u32) -> PathBuf {
+    let p = mai_dir("cover").join(format!("{}.png", song_id % 10000));
+    if p.exists() { p } else { mai_dir("cover").join("0.png") }
+}
+
+type Cache = RwLock<HashMap<(PathBuf, u32, u32), Arc<RgbaImage>>>;
+static CACHE: LazyLock<Cache> = LazyLock::new(Default::default);
+
+fn decode(path: &Path) -> Option<RgbaImage> {
+    match image::open(path) {
+        Ok(img) => Some(img.to_rgba8()),
+        Err(e) => {
+            log::warn!("图片加载失败 {}: {e}", path.display());
+            None
         }
-        width
     }
+}
 
-    /// Truncate song title by pixel width (max width default 160.0 px at 14pt)
-    pub fn truncate_title_by_font<F: Font>(title: &str, font: &F, scale_size: f32, max_width: f32) -> String {
-        let full_w = Self::measure_text_width(title, font, scale_size);
-        if full_w <= max_width {
-            return title.to_string();
+/// Opens (and caches) a UI asset; covers are decoded on demand and never cached.
+pub fn open(path: &Path) -> Option<Arc<RgbaImage>> {
+    open_sized(path, 0, 0)
+}
+
+/// Opens an image resized to `w x h` (0 = original). Cached unless it is a cover.
+pub fn open_sized(path: &Path, w: u32, h: u32) -> Option<Arc<RgbaImage>> {
+    let key = (path.to_path_buf(), w, h);
+    if let Some(img) = CACHE.read().ok()?.get(&key) {
+        return Some(img.clone());
+    }
+    let raw = decode(path)?;
+    let img = Arc::new(if w == 0 || (raw.width() == w && raw.height() == h) { raw } else { resize(&raw, w, h) });
+    if !path.starts_with(mai_dir("cover"))
+        && let Ok(mut c) = CACHE.write()
+    {
+        c.insert(key, img.clone());
+    }
+    Some(img)
+}
+
+/// Covers for many songs at once, decoded in parallel.
+pub fn covers(ids: &[u32], w: u32, h: u32) -> HashMap<u32, Arc<RgbaImage>> {
+    let mut uniq: Vec<u32> = ids.to_vec();
+    uniq.sort_unstable();
+    uniq.dedup();
+    uniq.par_iter().filter_map(|&id| Some((id, open_sized(&cover_path(id), w, h)?))).collect()
+}
+
+/// Pillow `Image.resize` (BICUBIC) on premultiplied alpha.
+pub fn resize(img: &RgbaImage, w: u32, h: u32) -> RgbaImage {
+    resize_with(img, w, h, imageops::FilterType::CatmullRom)
+}
+
+pub fn resize_with(img: &RgbaImage, w: u32, h: u32, filter: imageops::FilterType) -> RgbaImage {
+    let mut pre = img.clone();
+    for p in pre.pixels_mut() {
+        let a = u32::from(p[3]);
+        for c in 0..3 {
+            let t = u32::from(p[c]) * a + 128;
+            p[c] = ((t + (t >> 8)) >> 8) as u8;
         }
-        let dots_w = Self::measure_text_width("...", font, scale_size);
-        let avail_w = max_width - dots_w;
-        let mut cur = String::new();
-        for ch in title.chars() {
-            let next = format!("{}{}", cur, ch);
-            if Self::measure_text_width(&next, font, scale_size) > avail_w {
+    }
+    let mut out = imageops::resize(&pre, w.max(1), h.max(1), filter);
+    for p in out.pixels_mut() {
+        let a = u32::from(p[3]);
+        if a != 0 && a != 255 {
+            let inv = (255 << 16) / a;
+            for c in 0..3 {
+                p[c] = ((u32::from(p[c]) * inv + (1 << 15)) >> 16).min(255) as u8;
+            }
+        }
+    }
+    out
+}
+
+/// Pillow `Image.alpha_composite(src, dest=(x, y))`.
+pub fn paste(dst: &mut RgbaImage, src: &RgbaImage, x: i32, y: i32) {
+    let (dw, dh) = (dst.width() as i32, dst.height() as i32);
+    let (sw, sh) = (src.width() as i32, src.height() as i32);
+    let (x0, y0) = (x.max(0), y.max(0));
+    let (x1, y1) = ((x + sw).min(dw), (y + sh).min(dh));
+    if x0 >= x1 || y0 >= y1 {
+        return;
+    }
+    let (d, s) = (dst.as_mut(), src.as_raw());
+    for ty in y0..y1 {
+        let srow = ((ty - y) * sw) as usize * 4;
+        let drow = (ty * dw) as usize * 4;
+        for tx in x0..x1 {
+            let si = srow + (tx - x) as usize * 4;
+            let di = drow + tx as usize * 4;
+            let sa = u32::from(s[si + 3]);
+            if sa == 0 {
+                continue;
+            }
+            if sa == 255 {
+                d[di..di + 4].copy_from_slice(&s[si..si + 4]);
+                continue;
+            }
+            let da = u32::from(d[di + 3]);
+            let blend = da * (255 - sa);
+            let outa255 = sa * 255 + blend;
+            let coef1 = sa * 255 * 255 * 128 / outa255;
+            let coef2 = 255 * 128 - coef1;
+            for c in 0..3 {
+                let t = u32::from(s[si + c]) * coef1 + u32::from(d[di + c]) * coef2 + (0x80 << 7);
+                d[di + c] = (((t >> 8) + t) >> 8 >> 7).min(255) as u8;
+            }
+            let t = outa255 + 0x80;
+            d[di + 3] = (((t >> 8) + t) >> 8) as u8;
+        }
+    }
+}
+
+/// Opens, optionally resizes (0 = keep) and composites an asset; missing files are skipped.
+pub fn paste_file(dst: &mut RgbaImage, path: &Path, w: u32, h: u32, x: i32, y: i32) {
+    if let Some(img) = open_sized(path, w, h) {
+        paste(dst, &img, x, y);
+    }
+}
+
+pub fn crop(img: &RgbaImage, x: u32, y: u32, w: u32, h: u32) -> RgbaImage {
+    imageops::crop_imm(img, x, y, w.min(img.width().saturating_sub(x)), h.min(img.height().saturating_sub(y)))
+        .to_image()
+}
+
+/// Upstream `tricolor_gradient_prism_plus`.
+pub fn gradient(width: u32, height: u32) -> RgbaImage {
+    const STOPS: [(f64, [f64; 3]); 9] = [
+        (0.0, [255.0, 255.0, 255.0]),
+        (0.14, [255.0, 255.0, 255.0]),
+        (0.24, [255.0, 213.0, 207.0]),
+        (0.46, [255.0, 213.0, 207.0]),
+        (0.56, [255.0, 197.0, 213.0]),
+        (0.67, [234.0, 171.0, 255.0]),
+        (0.85, [114.0, 188.0, 254.0]),
+        (0.95, [101.0, 242.0, 223.0]),
+        (1.0, [101.0, 242.0, 223.0]),
+    ];
+    let mut img = RgbaImage::new(width, height);
+    for y in 0..height {
+        let t = if height > 1 { 1.0 - f64::from(y) / f64::from(height - 1) } else { 0.0 };
+        let mut px = [0u8, 0, 0, 0];
+        for pair in STOPS.windows(2) {
+            let ((p1, c1), (p2, c2)) = (pair[0], pair[1]);
+            if p1 <= t && t <= p2 {
+                let r = (t - p1) / (p2 - p1);
+                for j in 0..3 {
+                    px[j] = (c1[j] + (c2[j] - c1[j]) * r) as u8;
+                }
+                px[3] = 255;
                 break;
             }
-            cur.push(ch);
         }
-        format!("{}...", cur)
+        for x in 0..width {
+            img.put_pixel(x, y, image::Rgba(px));
+        }
     }
+    img
+}
 
-    /// Draw text on canvas with anchor handling (Left-Middle, Center-Middle, Left-Top, Right-Middle)
-    /// and optional stroke/outline support.
-    pub fn draw_text_with_stroke<F: Font>(
-        target: &mut RgbaImage,
-        color: Rgba<u8>,
-        x: i32,
-        y: i32,
-        scale_size: f32,
-        font: &F,
-        text: &str,
-        anchor: &str,
-        stroke_width: i32,
-        stroke_color: Rgba<u8>,
-    ) {
-        let scale = PxScale::from(scale_size);
-        let scaled_font = font.as_scaled(scale);
-        let (mut draw_x, mut draw_y) = (x, y);
+/// Pillow `rounded_rectangle((x0, y0, x1, y1), radius)` coverage test (inclusive box).
+fn in_rounded(px: i32, py: i32, x0: i32, y0: i32, x1: i32, y1: i32, r: i32) -> bool {
+    if px < x0 || py < y0 || px > x1 || py > y1 {
+        return false;
+    }
+    let cx = if px < x0 + r {
+        x0 + r
+    } else if px > x1 - r {
+        x1 - r
+    } else {
+        return true;
+    };
+    let cy = if py < y0 + r {
+        y0 + r
+    } else if py > y1 - r {
+        y1 - r
+    } else {
+        return true;
+    };
+    let (dx, dy) = ((px - cx) as f32, (py - cy) as f32);
+    dx * dx + dy * dy <= (r as f32 + 0.5).powi(2)
+}
 
-        // Measure text width for anchor
-        if anchor == "mm" || anchor == "lm" || anchor == "rm" {
-            let mut width = 0.0;
-            for ch in text.chars() {
-                width += scaled_font.h_advance(scaled_font.glyph_id(ch));
-            }
-            if anchor == "mm" {
-                draw_x -= (width / 2.0) as i32;
-                draw_y -= (scale_size / 2.0) as i32;
-            } else if anchor == "lm" {
-                draw_y -= (scale_size / 2.0) as i32;
-            } else if anchor == "rm" {
-                draw_x -= width as i32;
-                draw_y -= (scale_size / 2.0) as i32;
-            }
+/// Upstream `generate_frosted_card`: blurred translucent rounded card with drop shadow.
+pub fn frosted_card(im: &RgbaImage, b: (u32, u32, u32, u32), alpha: f32) -> RgbaImage {
+    let (w, h) = (b.2 - b.0, b.3 - b.1);
+    let mut card = imageops::fast_blur(&crop(im, b.0, b.1, w, h), 4.0);
+    let white = RgbaImage::from_pixel(w, h, image::Rgba([255, 255, 255, (255.0 * alpha) as u8]));
+    paste(&mut card, &white, 0, 0);
+
+    let (sw, sh) = (w + 20, h + 20);
+    let mut shadow = RgbaImage::new(sw, sh);
+    for (x, y, p) in shadow.enumerate_pixels_mut() {
+        if in_rounded(x as i32, y as i32, 15, 15, 15 + w as i32, 15 + h as i32, 25) {
+            *p = image::Rgba([0, 0, 0, 50]);
         }
+    }
+    let shadow = imageops::fast_blur(&shadow, 3.0);
 
-        // Draw outline / stroke if specified
-        if stroke_width > 0 {
-            for dx in -stroke_width..=stroke_width {
-                for dy in -stroke_width..=stroke_width {
-                    if dx * dx + dy * dy <= stroke_width * stroke_width && (dx != 0 || dy != 0) {
-                        draw_text_mut(
-                            target,
-                            stroke_color,
-                            draw_x + dx,
-                            draw_y + dy,
-                            scale,
-                            font,
-                            text,
-                        );
-                    }
+    let mut layer = RgbaImage::new(im.width(), im.height());
+    let (sx, sy) = (b.0 as i64 + 10 - 15, b.1 as i64 + 10 - 15);
+    imageops::replace(&mut layer, &shadow, sx, sy);
+    for y in 0..h {
+        for x in 0..w {
+            if in_rounded(x as i32, y as i32, 0, 0, w as i32, h as i32, 25) {
+                let (tx, ty) = (b.0 + x, b.1 + y);
+                if tx < layer.width() && ty < layer.height() {
+                    layer.put_pixel(tx, ty, *card.get_pixel(x, y));
                 }
             }
         }
-
-        draw_text_mut(target, color, draw_x, draw_y, scale, font, text);
     }
+    let mut out = im.clone();
+    paste(&mut out, &layer, 0, 0);
+    out
+}
 
-    pub fn draw_text<F: Font>(
-        target: &mut RgbaImage,
-        color: Rgba<u8>,
-        x: i32,
-        y: i32,
-        scale_size: f32,
-        font: &F,
-        text: &str,
-        anchor: &str,
-    ) {
-        Self::draw_text_with_stroke(
-            target,
-            color,
-            x,
-            y,
-            scale_size,
-            font,
-            text,
-            anchor,
-            0,
-            Rgba([0, 0, 0, 0]),
-        );
+/// Standard table background (`_generate_bg` / `DrawScore.__init__`).
+pub fn table_bg(height: u32, separator: Option<i32>) -> RgbaImage {
+    let mut im = gradient(1400, height);
+    let h = height as i32;
+    paste_file(&mut im, &pic("aurora.png"), 0, 0, 0, 0);
+    paste_file(&mut im, &pic("bg_shines.png"), 0, 0, 11, 6);
+    paste_file(&mut im, &pic("rainbow.png"), 0, 0, 318, h - 545);
+    paste_file(&mut im, &pic("rainbow_bottom.png"), 0, 0, 122, h - 305);
+    if let Some(pattern) = open(&pic("pattern.png")) {
+        for i in 0..=(h / 358) {
+            paste(&mut im, &pattern, 0, (358 + 7) * i);
+        }
     }
-
-    pub fn tricolor_gradient_prism_plus(width: u32, height: u32) -> RgbaImage {
-        let colors_list: [(f32, [u8; 3]); 9] = [
-            (0.00, [101, 242, 223]),
-            (0.05, [101, 242, 223]),
-            (0.15, [114, 188, 254]),
-            (0.33, [234, 171, 255]),
-            (0.44, [255, 197, 213]),
-            (0.54, [255, 213, 207]),
-            (0.76, [255, 213, 207]),
-            (0.86, [255, 255, 255]),
-            (1.00, [255, 255, 255]),
-        ];
-
-        let mut img = RgbaImage::new(width, height);
-        for y in 0..height {
-            let t = 1.0 - (y as f32 / (height.saturating_sub(1) as f32).max(1.0));
-            let mut rgb = [255, 255, 255];
-            for i in 0..colors_list.len() - 1 {
-                let (p1, c1) = colors_list[i];
-                let (p2, c2) = colors_list[i + 1];
-                if t >= p1 && t <= p2 {
-                    let rel_t = (t - p1) / (p2 - p1);
-                    rgb = [
-                        (c1[0] as f32 + (c2[0] as f32 - c1[0] as f32) * rel_t) as u8,
-                        (c1[1] as f32 + (c2[1] as f32 - c1[1] as f32) * rel_t) as u8,
-                        (c1[2] as f32 + (c2[2] as f32 - c1[2] as f32) * rel_t) as u8,
-                    ];
-                    break;
-                }
-            }
-            let pixel = Rgba([rgb[0], rgb[1], rgb[2], 255]);
-            for x in 0..width {
-                img.put_pixel(x, y, pixel);
-            }
-        }
-        img
+    if let Some(y) = separator {
+        paste_file(&mut im, &pic("separator.png"), 0, 0, 100, y);
     }
-
-    pub fn generate_table_bg(width: u32, height: u32, separator_y: i64) -> RgbaImage {
-        let mut im = Self::tricolor_gradient_prism_plus(width, height);
-        let aurora_path = crate::draw::assets::get_pic_path("aurora.png");
-        if let Some(aurora) = crate::draw::assets::load_image(&aurora_path) {
-            Self::overlay(&mut im, &aurora, 0, 0);
-        }
-        let shines_path = crate::draw::assets::get_pic_path("bg_shines.png");
-        if let Some(shines) = crate::draw::assets::load_image(&shines_path) {
-            Self::overlay(&mut im, &shines, 11, 6);
-        }
-        let rainbow_path = crate::draw::assets::get_pic_path("rainbow.png");
-        if let Some(rainbow) = crate::draw::assets::load_image(&rainbow_path) {
-            Self::overlay(&mut im, &rainbow, 318, height as i64 - 545);
-        }
-        let rainbow_b_path = crate::draw::assets::get_pic_path("rainbow_bottom.png");
-        if let Some(rb) = crate::draw::assets::load_image(&rainbow_b_path) {
-            Self::overlay(&mut im, &rb, 122, height as i64 - 305);
-        }
-        let pattern_path = crate::draw::assets::get_pic_path("pattern.png");
-        if let Some(pat) = crate::draw::assets::load_image(&pattern_path) {
-            let pat_rows = (height / 365) + 1;
-            for h in 0..pat_rows {
-                Self::overlay(&mut im, &pat, 0, (365 * h) as i64);
-            }
-        }
-        let sep_path = crate::draw::assets::get_pic_path("separator.png");
-        if let Some(sep) = crate::draw::assets::load_image(&sep_path) {
-            Self::overlay(&mut im, &sep, 100, separator_y);
-        }
-        im
-    }
+    im
 }

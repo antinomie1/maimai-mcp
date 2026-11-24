@@ -1,224 +1,182 @@
-use crate::core::calc::rating::{compute_single_rating, get_rate_string};
-use crate::core::clients::divingfish::DivingFishClient;
-use crate::core::clients::lxns::LxnsClient;
-use crate::core::database::music_db::MUSIC_DB;
-use crate::core::models::score::{PlayerB50, ScoreRecord};
-use crate::core::models::user::ScoreSource;
-use crate::draw::b50::B50Theme;
-use crate::draw::level_progress::{LevelProgressRenderer, RiseRecommendation};
-use crate::draw::play_score::PlayScoreRenderer;
-use crate::tools::ToolHelper;
-use rmcp::model::CallToolResult;
+use super::b50::MESSAGE;
+use super::{Reply, ensure_data, find_song, render, require_qq, wants_image};
+use crate::core::constants::{LEVEL_LIST, parse_difficulty};
+use crate::core::models::{Rise, Slot};
+use crate::core::music::data;
+use crate::core::service;
+use crate::draw::{info::draw_play_data, score::draw_rise};
+use crate::error::{AppError, Result};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct MaiPlayScoreParams {
-    /// Song name, alias, or song ID to query
-    pub song_name: String,
-    /// User QQ number (optional override)
+pub struct PlayScoreParams {
+    /// Song id, title or alias
+    pub song: String,
+    /// User QQ number
     pub qq: Option<String>,
-    /// DivingFish username or LXNS user identifier
-    pub username: Option<String>,
-    /// Score source: "divingfish" or "lxns"
-    pub source: Option<String>,
-    /// Theme: "circle" or "prism_plus"
-    pub theme: Option<String>,
-    /// Output format: "image" (default), "text", or "both"
     pub output_format: Option<String>,
+}
+
+/// info: the user's records on every difficulty of a song.
+pub async fn play_score(p: PlayScoreParams) -> Result<Reply> {
+    let d = data();
+    ensure_data(&d)?;
+    let user = service::auth_user(require_qq(p.qq.as_deref())?)?;
+    let song = find_song(&d, &p.song)?;
+    let slots = service::song_slots(&user, &song).await?;
+    let mut text = format!("【{}】{}\n", song.song_id, song.song_name);
+    for (i, s) in slots.iter().enumerate() {
+        let name = crate::core::constants::DIFFS.get(i).copied().unwrap_or("?");
+        text += &match s {
+            Slot::Played(p) => {
+                format!("{name}: {:.4}% Ra {} {}\n", p.achievements, p.rating, p.fc.clone().unwrap_or_default())
+            }
+            Slot::NotPlayed(_) => format!("{name}: 未游玩\n"),
+        };
+    }
+    text += MESSAGE;
+    if !wants_image(p.output_format.as_deref()) {
+        return Ok(Reply::Text(text));
+    }
+    let (theme, svc) = (user.theme, user.service);
+    let img = render(move || Some(draw_play_data(&song, &slots, theme, svc))).await?;
+    Ok(Reply::image(img, "play_score", text))
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct MaiRiseScoreParams {
-    /// User QQ number (optional override)
+pub struct SongStatsParams {
+    /// Song id, title or alias
+    pub song: String,
+    /// Difficulty: 绿/黄/红/紫/白 or basic..re:master (default 紫 Master)
+    pub difficulty: Option<String>,
+}
+
+/// ginfo: global play statistics of a chart.
+pub async fn song_stats(p: SongStatsParams) -> Result<Reply> {
+    let d = data();
+    ensure_data(&d)?;
+    let li = match p.difficulty.as_deref().filter(|s| !s.trim().is_empty()) {
+        Some(s) => parse_difficulty(s).ok_or_else(|| AppError::Msg("无法识别的难度".into()))?,
+        None => 3,
+    };
+    let song = find_song(&d, &p.song)?;
+    let diff = song.difficulties.get(li).ok_or_else(|| AppError::Msg("该乐曲没有这个等级".into()))?;
+    let s = diff.stats.as_ref().ok_or_else(|| AppError::Msg("该乐曲还没有统计信息".into()))?;
+    Ok(Reply::Text(format!(
+        "{} {} 「{}」\n游玩次数：{}\n拟合难度：{:.2}\n平均达成率：{:.2}%\n平均 DX 分数：{:.1}\n谱面成绩标准差：{:.2}",
+        song.song_id,
+        song.song_name,
+        crate::core::constants::DIFFS[li],
+        s.cnt.round(),
+        s.fit_diff,
+        s.avg,
+        s.avg_dx,
+        s.std_dev
+    )))
+}
+
+const SCORE_LINE_HELP: &str = "此功能为查找某首歌分数线设计。
+命令格式：分数线「难度+歌曲id」「分数线」
+例如：分数线 紫799 100
+命令将返回分数线允许的「TAP」「GREAT」容错，
+以及「BREAK」50落等价的「TAP」「GREAT」数。
+以下为「TAP」「GREAT」的对应表：
+        GREAT / GOOD / MISS
+TAP         1 / 2.5  / 5
+HOLD        2 / 5    / 10
+SLIDE       3 / 7.5  / 15
+TOUCH       1 / 2.5  / 5
+BREAK       5 / 12.5 / 25 (外加200落)";
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ScoreLineParams {
+    /// Song id (omit all fields to get the help text)
+    pub song_id: Option<u32>,
+    /// Difficulty: 绿/黄/红/紫/白
+    pub difficulty: Option<String>,
+    /// Target achievement line, e.g. 100 or 100.5
+    pub line: Option<f64>,
+}
+
+/// 分数线: TAP GREAT tolerance for a target achievement.
+pub async fn score_line(p: ScoreLineParams) -> Result<Reply> {
+    let (Some(id), Some(diff), Some(line)) = (p.song_id, p.difficulty.as_deref(), p.line) else {
+        return Ok(Reply::Text(SCORE_LINE_HELP.into()));
+    };
+    let err = || AppError::Msg("格式错误，输入“分数线 帮助”以查看帮助信息".into());
+    let li = parse_difficulty(diff).ok_or_else(err)?;
+    let d = data();
+    let song = d.by_id(id).ok_or_else(err)?;
+    let chart = song.difficulties.get(li).ok_or_else(err)?;
+    let n = &chart.notes;
+    let total = f64::from(n.tap * 500 + n.slide * 1500 + n.hold * 1000 + n.touch * 500 + n.brk * 2500);
+    let reduce = 101.0 - line;
+    if n.brk == 0 || reduce <= 0.0 || reduce >= 101.0 {
+        return Err(err());
+    }
+    let break_50 = total * (0.01 / f64::from(n.brk)) / 4.0;
+    let labels = ["Basic", "Advanced", "Expert", "Master", "Re:MASTER"];
+    Ok(Reply::Text(format!(
+        "{}「{}」\n分数线「{}%」\n允许的最多「TAP」「GREAT」数量为\n「{:.2}」(每个-{:.4}%),\n「BREAK」50落(一共「{}」个)\n等价于「{:.3}」个「TAP」「GREAT」(-{:.4}%)",
+        song.song_name,
+        labels[li],
+        crate::util::py_float(line),
+        total * reduce / 10000.0,
+        10000.0 / total,
+        n.brk,
+        break_50 / 100.0,
+        break_50 / total * 100.0
+    )))
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RiseParams {
+    /// User QQ number
     pub qq: Option<String>,
-    /// DivingFish username or LXNS user identifier
-    pub username: Option<String>,
-    /// Score source: "divingfish" or "lxns"
-    pub source: Option<String>,
-    /// Output format: "image" (default), "text", or "both"
+    /// Restrict to a level, e.g. "13+" (optional)
+    pub level: Option<String>,
+    /// Minimum rating gain per chart (optional, default 1)
+    pub score: Option<u32>,
     pub output_format: Option<String>,
 }
 
-pub struct ScoreTools;
-
-impl ScoreTools {
-    pub async fn play_score(params: MaiPlayScoreParams) -> Result<CallToolResult, String> {
-        let (user_cfg, resolved_src, default_theme) = ToolHelper::resolve_user_config(
-            params.qq.as_deref(),
-            params.username.as_deref(),
-            params.source.as_deref(),
+fn rise_text(title: &str, list: &[Rise]) -> String {
+    let mut out = format!("--- {title} ---\n");
+    for r in list {
+        out += &format!(
+            "[{}] {} ds{} {:.4}% -> {:.4}% (Ra {} -> {})\n",
+            r.song_id,
+            r.song_name,
+            crate::util::py_float(r.level_value),
+            r.old_achievements,
+            r.achievements,
+            r.old_rating,
+            r.rating
         );
-
-        let selected_theme = match params.theme.as_deref() {
-            Some("prism_plus") => B50Theme::PrismPlus,
-            Some("circle") => B50Theme::Circle,
-            _ => default_theme,
-        };
-
-        // 1. Locate song
-        let query = params.song_name.trim();
-        let target_song = MUSIC_DB.read().unwrap().find_song(query);
-        let song = target_song.ok_or_else(|| format!("未找到曲目: `{query}`，请检查曲名、别名或 ID。"))?;
-        let song_id_num: u32 = song.id.parse().unwrap_or(0);
-
-        // 2. Fetch player scores
-        let mut play_results: Vec<Option<ScoreRecord>> = vec![None; song.ds.len().min(5)];
-
-        let b50_opt: Option<PlayerB50> = match resolved_src {
-            ScoreSource::DivingFish => {
-                let df = DivingFishClient::new();
-                if let Some(ref uname) = user_cfg.divingfish_username {
-                    df.query_b50_by_username(uname).await.ok()
-                } else if !user_cfg.qq.is_empty() {
-                    df.query_b50_by_qq(&user_cfg.qq).await.ok()
-                } else {
-                    None
-                }
-            }
-            ScoreSource::Lxns => {
-                let lxns = LxnsClient::new();
-                let qq_opt = if user_cfg.qq.is_empty() { None } else { Some(user_cfg.qq.as_str()) };
-                lxns.query_b50_smart(qq_opt, user_cfg.lxns_friend_code, user_cfg.lxns_token.as_deref()).await.ok()
-            }
-        };
-
-        if let Some(b50) = b50_opt {
-            for rec in b50.b35.into_iter().chain(b50.b15.into_iter()) {
-                if rec.song_id == song_id_num || rec.song_id % 10000 == song_id_num % 10000 {
-                    let idx = rec.level_index as usize;
-                    if idx < play_results.len() {
-                        play_results[idx] = Some(rec);
-                    }
-                }
-            }
-        }
-
-        // Summary text
-        let mut summary = format!("【{} (ID:{}) 游玩成绩】\n", song.title, song.id);
-        let diff_names = ["Basic", "Advanced", "Expert", "Master", "Re:Master"];
-        for (i, opt) in play_results.iter().enumerate() {
-            let diff_label = diff_names.get(i).copied().unwrap_or("Diff");
-            let ds = song.ds.get(i).copied().unwrap_or(0.0);
-            if let Some(rec) = opt {
-                summary.push_str(&format!(
-                    "{} (Lv.{:.1}): {:.4}% [{}] -> Ra:{}\n",
-                    diff_label, ds, rec.achievements, rec.rate, rec.dx_rating
-                ));
-            } else {
-                summary.push_str(&format!("{} (Lv.{:.1}): 未游玩 / 未在B50中\n", diff_label, ds));
-            }
-        }
-
-        let img = if params.output_format.as_deref() == Some("text") {
-            None
-        } else {
-            match PlayScoreRenderer::render_song_play_data(&song, &play_results, selected_theme) {
-                Ok(img) => Some(img),
-                Err(e) => {
-                    log::warn!("Failed to render play_score image: {e}");
-                    None
-                }
-            }
-        };
-
-        Ok(ToolHelper::format_result(
-            img.as_ref(),
-            "play_score",
-            &summary,
-            params.output_format.as_deref(),
-        ))
     }
+    out
+}
 
-    pub async fn rise_score(params: MaiRiseScoreParams) -> Result<CallToolResult, String> {
-        let (user_cfg, resolved_src, _) = ToolHelper::resolve_user_config(
-            params.qq.as_deref(),
-            params.username.as_deref(),
-            params.source.as_deref(),
-        );
-
-        let df = DivingFishClient::new();
-        let b50 = match resolved_src {
-            ScoreSource::DivingFish => {
-                if let Some(ref uname) = user_cfg.divingfish_username {
-                    df.query_b50_by_username(uname).await
-                } else if !user_cfg.qq.is_empty() {
-                    df.query_b50_by_qq(&user_cfg.qq).await
-                } else {
-                    return Err("未指定 QQ 或用户名，无法分析当前成绩。".into());
-                }
-            }
-            ScoreSource::Lxns => {
-                let lxns = LxnsClient::new();
-                let qq_opt = if user_cfg.qq.is_empty() { None } else { Some(user_cfg.qq.as_str()) };
-                lxns.query_b50_smart(qq_opt, user_cfg.lxns_friend_code, user_cfg.lxns_token.as_deref()).await
-            }
-        }.map_err(|e| format!("获取成绩失败: {e}"))?;
-
-        let sd_floor = b50.b35.last().map(|s| s.dx_rating).unwrap_or(200);
-        let dx_floor = b50.b15.last().map(|s| s.dx_rating).unwrap_or(200);
-
-        // Generate recommendations
-        let mut sd_rises = Vec::new();
-        for s in b50.b35.iter().rev().take(5) {
-            let target_ach = (s.achievements + 0.5).min(100.5);
-            let target_ra = compute_single_rating(s.ds, target_ach);
-            let rate_str = get_rate_string(target_ach).to_uppercase();
-            sd_rises.push(RiseRecommendation {
-                song_id: s.song_id,
-                song_name: s.title.clone(),
-                level_index: s.level_index as usize,
-                level_value: s.ds,
-                song_type: s.song_type,
-                old_achievements: s.achievements,
-                old_rating: s.dx_rating,
-                target_achievements: target_ach,
-                target_rating: target_ra,
-                rate_str,
-            });
-        }
-
-        let mut dx_rises = Vec::new();
-        for s in b50.b15.iter().rev().take(5) {
-            let target_ach = (s.achievements + 0.5).min(100.5);
-            let target_ra = compute_single_rating(s.ds, target_ach);
-            let rate_str = get_rate_string(target_ach).to_uppercase();
-            dx_rises.push(RiseRecommendation {
-                song_id: s.song_id,
-                song_name: s.title.clone(),
-                level_index: s.level_index as usize,
-                level_value: s.ds,
-                song_type: s.song_type,
-                old_achievements: s.achievements,
-                old_rating: s.dx_rating,
-                target_achievements: target_ach,
-                target_rating: target_ra,
-                rate_str,
-            });
-        }
-
-        let summary = format!(
-            "【上分建议分析】\n当前 DX Rating: {}\n旧曲底分 (B35 floor): {} | 新曲底分 (B15 floor): {}\n建议提升低达成率曲目至 SSS+ (100.5%) 获取显著提分。",
-            b50.rating, sd_floor, dx_floor
-        );
-
-        let img = if params.output_format.as_deref() == Some("text") {
-            None
-        } else {
-            match LevelProgressRenderer::render_rise_score(&sd_rises, &dx_rises) {
-                Ok(img) => Some(img),
-                Err(e) => {
-                    log::warn!("Failed to render rise_score image: {e}");
-                    None
-                }
-            }
-        };
-
-        Ok(ToolHelper::format_result(
-            img.as_ref(),
-            "rise_score",
-            &summary,
-            params.output_format.as_deref(),
-        ))
+/// 我要上分: random charts that raise the B50 floor.
+pub async fn rise_score(p: RiseParams) -> Result<Reply> {
+    let d = data();
+    ensure_data(&d)?;
+    let user = service::auth_user(require_qq(p.qq.as_deref())?)?;
+    let level = p.level.as_deref().map(str::trim).filter(|l| !l.is_empty());
+    if level.is_some_and(|l| !LEVEL_LIST.contains(&l)) {
+        return Err(AppError::Msg("无此等级".into()));
     }
+    let (sd, sd_low, dx, dx_low) = service::rise(&user, level, p.score).await?;
+    let text = format!(
+        "【上分推荐】\n{}{}「谱面推荐不使用任何算法，仅供参考」",
+        rise_text("旧版本谱面推荐", &sd),
+        rise_text("新版本谱面推荐", &dx)
+    );
+    if !wants_image(p.output_format.as_deref()) {
+        return Ok(Reply::Text(text));
+    }
+    let svc = user.service;
+    let img = render(move || Some(draw_rise(svc, &sd, sd_low, &dx, dx_low))).await?;
+    Ok(Reply::image(img, "rise_score", text))
 }

@@ -3,3 +3,4 @@ pub mod core;
 pub mod draw;
 pub mod error;
 pub mod tools;
+pub mod util;

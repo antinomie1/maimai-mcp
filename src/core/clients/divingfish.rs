@@ -1,761 +1,367 @@
+//! DivingFish prober: public B50, OAuth records, ranking and the OAuth binding
+//! flow (`handoff=code` device authorization + confirmation code).
+
+use super::{BULK_TIMEOUT, HTTP};
 use crate::config::CONFIG;
-use crate::core::calc::rating::compute_single_rating;
-use crate::core::database::music_db::MUSIC_DB;
-use crate::core::models::music::SongType;
-use crate::core::models::score::{ComboStatus, PlayerB50, ScoreRecord, SyncStatus};
-use crate::error::AppError;
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use crate::core::models::Played;
+use crate::error::{AppError, Result};
+use base64::Engine;
+use reqwest::{Response, StatusCode};
+use serde::Deserialize;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::sync::{LazyLock, RwLock};
+use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-/// Cached access tokens: subject -> (access_token, expires_at)
-static TOKEN_CACHE: LazyLock<RwLock<HashMap<String, (String, Instant)>>> =
-    LazyLock::new(|| RwLock::new(HashMap::new()));
+const ON_BEHALF_OF_GRANT: &str = "urn:diving-fish:params:oauth:grant-type:on-behalf-of";
+const CONFIRMATION_CODE_GRANT: &str = "urn:diving-fish:params:oauth:grant-type:confirmation-code";
+pub const REVOKE_URL: &str = "/apps";
+const EXPIRES_MARGIN: u64 = 30;
 
-/// Compute SHA-256 hash of `{client_id}:{external_id}` in lowercase hex.
-pub fn compute_subject_ref(client_id: &str, external_id: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(format!("{client_id}:{external_id}").as_bytes());
-    let hash = hasher.finalize();
-    hash.iter().map(|b| format!("{:02x}", b)).collect()
-}
-
-/// Helper to mask QQ for safe display in OAuth binding label
-pub fn mask_qq(qq: &str) -> String {
-    let q = qq.trim();
-    if q.len() > 4 {
-        format!("QQ {}****{}", &q[..2], &q[q.len() - 2..])
+pub fn api_base() -> &'static str {
+    if CONFIG.df_proxy {
+        "https://proxy.yuzuchan.site/maimaidxprober"
     } else {
-        "QQ ****".to_string()
+        "https://maimai.diving-fish.com/api/maimaidxprober"
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct DeviceAuthResponse {
-    pub device_code: String,
-    pub user_code: String,
-    pub verification_uri: String,
+#[derive(Debug, Clone, Deserialize)]
+pub struct DfRecord {
+    pub achievements: f64,
+    #[serde(default)]
+    pub fc: String,
+    #[serde(default)]
+    pub fs: String,
+    #[serde(default)]
+    pub level: String,
+    pub level_index: u8,
+    #[serde(default)]
+    pub title: String,
+    #[serde(rename = "type", default)]
+    pub kind: String,
+    #[serde(default)]
+    pub ds: f64,
+    #[serde(rename = "dxScore", default)]
+    pub dx_score: u32,
+    #[serde(default)]
+    pub ra: u32,
+    #[serde(default)]
+    pub rate: String,
+    pub song_id: u32,
+}
+
+impl DfRecord {
+    pub fn to_played(&self) -> Played {
+        let opt = |s: &str| (!s.is_empty()).then(|| s.to_string());
+        Played {
+            song_id: self.song_id,
+            song_name: self.title.clone(),
+            level: self.level.clone(),
+            level_index: self.level_index,
+            level_value: self.ds,
+            kind: self.kind.to_uppercase(),
+            rating: self.ra,
+            achievements: self.achievements,
+            rate: opt(&self.rate),
+            fc: opt(&self.fc),
+            fs: opt(&self.fs),
+            dx_score: self.dx_score,
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct DfCharts {
+    #[serde(default)]
+    pub sd: Vec<DfRecord>,
+    #[serde(default)]
+    pub dx: Vec<DfRecord>,
+}
+
+/// `UserInfo` (b50) and `UserAllRecords` share this shape.
+#[derive(Debug, Default, Deserialize)]
+pub struct DfUser {
+    pub additional_rating: Option<u32>,
+    pub nickname: Option<String>,
+    pub plate: Option<String>,
+    pub rating: Option<u32>,
+    pub username: Option<String>,
+    #[serde(default)]
+    pub charts: DfCharts,
+    #[serde(default)]
+    pub records: Vec<DfRecord>,
+}
+
+/// `RecordsQueryRequest` for `GET /player/records`.
+#[derive(Debug, Default, Clone)]
+pub struct RecordsQuery {
+    pub song_id: Option<u32>,
+    pub level: Option<String>,
+    pub level_value: Option<f64>,
+    pub fc: Vec<String>,
+    pub fs: Vec<String>,
+    pub version: Vec<String>,
+}
+
+impl RecordsQuery {
+    fn params(&self) -> Vec<(&'static str, String)> {
+        let mut p = Vec::new();
+        p.extend(self.song_id.map(|v| ("song_id", v.to_string())));
+        p.extend(self.level.clone().map(|v| ("level", v)));
+        p.extend(self.level_value.map(|v| ("ds", crate::util::py_float(v))));
+        p.extend(self.fc.iter().map(|v| ("fc", v.clone())));
+        p.extend(self.fs.iter().map(|v| ("fs", v.clone())));
+        p.extend(self.version.iter().map(|v| ("version", v.clone())));
+        p
+    }
+}
+
+pub struct DivingFish {
+    qq: Option<String>,
+    username: Option<String>,
+}
+
+impl DivingFish {
+    pub fn new(qq: Option<&str>, username: Option<&str>) -> Self {
+        Self { qq: qq.map(str::to_string), username: username.map(str::to_string) }
+    }
+
+    fn oauth(&self) -> bool {
+        CONFIG.df_oauth_enabled() && self.qq.is_some() && self.username.is_none()
+    }
+
+    async fn check(&self, resp: Response) -> Result<Response> {
+        match resp.status() {
+            StatusCode::OK => Ok(resp),
+            StatusCode::BAD_REQUEST => {
+                let body: Value = resp.json().await.unwrap_or_default();
+                let msg = body.get("message").or_else(|| body.get("msg")).and_then(Value::as_str);
+                Err(match msg {
+                    Some("no such user") => AppError::DfUserNotFound,
+                    Some("user not exists") => AppError::UserNotExists,
+                    Some("开发者token有误" | "开发者token被禁用" | "请先联系水鱼申请开发者token") => {
+                        AppError::DfToken
+                    }
+                    _ => AppError::Other(format!("DivingFish 400 {msg:?}")),
+                })
+            }
+            StatusCode::UNAUTHORIZED => Err(AppError::DfToken),
+            StatusCode::FORBIDDEN if self.oauth() => Err(AppError::DfNotAuthorized),
+            StatusCode::FORBIDDEN => Err(AppError::DfQueryDisabled),
+            StatusCode::TOO_MANY_REQUESTS => Err(AppError::DfTooManyRequests),
+            s => Err(AppError::Other(format!("DivingFish HTTP {s}"))),
+        }
+    }
+
+    /// Best 50 via the public endpoint (works without OAuth).
+    pub async fn query_b50(&self) -> Result<DfUser> {
+        let mut body = json!({ "b50": true });
+        if let Some(qq) = &self.qq {
+            body["qq"] = json!(qq.parse::<u64>().unwrap_or(0));
+        }
+        if let Some(name) = &self.username {
+            body["username"] = json!(name);
+        }
+        let resp = HTTP.post(format!("{}/query/player", api_base())).json(&body).send().await?;
+        Ok(self.check(resp).await?.json().await?)
+    }
+
+    /// All records on behalf of the user (OAuth), retrying once with a fresh token.
+    pub async fn records(&self, query: &RecordsQuery) -> Result<DfUser> {
+        let qq = self.qq.as_deref().ok_or(AppError::DfNotAuthorized)?;
+        let url = format!("{}/player/records", api_base());
+        let mut refresh = false;
+        loop {
+            let token = access_token(qq, refresh).await?;
+            let resp = HTTP.get(&url).bearer_auth(token).query(&query.params()).send().await?;
+            if resp.status() == StatusCode::UNAUTHORIZED && !refresh {
+                refresh = true;
+                continue;
+            }
+            return Ok(self.check(resp).await?.json().await?);
+        }
+    }
+
+    /// Prober rating ranking sorted by rating descending.
+    pub async fn rating_ranking() -> Result<Vec<(String, u32)>> {
+        #[derive(Deserialize)]
+        struct Rank {
+            username: String,
+            ra: u32,
+        }
+        let resp = HTTP.get(format!("{}/rating_ranking", api_base())).timeout(BULK_TIMEOUT).send().await?;
+        let mut list: Vec<Rank> = Self::new(None, None).check(resp).await?.json().await?;
+        list.sort_by_key(|r| std::cmp::Reverse(r.ra));
+        Ok(list.into_iter().map(|r| (r.username, r.ra)).collect())
+    }
+
+    /// Raw `music_data` / `chart_stats` JSON.
+    pub async fn download(endpoint: &str) -> Result<Vec<u8>> {
+        let resp = HTTP.get(format!("{}/{endpoint}", api_base())).timeout(BULK_TIMEOUT).send().await?;
+        Ok(resp.error_for_status()?.bytes().await?.to_vec())
+    }
+}
+
+// ---------------------------------------------------------------- OAuth
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeviceAuthorization {
     pub verification_uri_complete: String,
     pub expires_in: u64,
-    pub interval: u64,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct OAuthTokenResponse {
-    pub access_token: String,
-    pub token_type: String,
-    pub expires_in: u64,
-    pub scope: Option<String>,
-    pub refresh_token: Option<String>,
-    pub sub: Option<String>,
+#[derive(Debug, Clone, Deserialize)]
+struct AccessToken {
+    access_token: String,
+    expires_in: u64,
+    #[serde(default)]
+    sub: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct OAuthUserInfoResponse {
-    pub sub: String,
-    pub preferred_username: Option<String>,
-    pub name: Option<String>,
-    pub nickname: Option<String>,
+static TOKENS: LazyLock<Mutex<HashMap<String, (String, Instant)>>> = LazyLock::new(Default::default);
+
+/// `sha256("<client_id>:<qq>")`; the QQ number never leaves the bot.
+pub fn subject_ref(qq: &str) -> String {
+    let id = CONFIG.df_client_id.as_deref().unwrap_or_default();
+    Sha256::digest(format!("{id}:{qq}").as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
 }
 
-#[derive(Debug, Deserialize, Clone)]
-#[allow(dead_code)]
-pub struct DfScore {
-    pub achievements: f64,
-    pub ds: f64,
-    #[serde(rename = "dxScore")]
-    pub dx_score: Option<u32>,
-    pub fc: Option<String>,
-    pub fs: Option<String>,
-    pub level_index: u8,
-    pub level_label: Option<String>,
-    pub ra: Option<u32>,
-    pub rate: Option<String>,
-    pub song_id: u32,
-    pub title: String,
-    #[serde(rename = "type")]
-    pub song_type: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct OAuthRecordsResponse {
-    pub username: Option<String>,
-    pub nickname: Option<String>,
-    pub rating: Option<u32>,
-    pub additional_rating: Option<u32>,
-    pub plate: Option<String>,
-    pub records: Option<Vec<DfScore>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct DfB50Response {
-    nickname: Option<String>,
-    rating: Option<u32>,
-    additional_rating: Option<u32>,
-    charts: Option<DfCharts>,
-    plate: Option<String>,
-    message: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct DfCharts {
-    dx: Option<Vec<DfScore>>,
-    sd: Option<Vec<DfScore>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct DfPlateResponse {
-    verlist: Option<Vec<DfScore>>,
-}
-
-pub struct DivingFishClient {
-    client: Client,
-}
-
-impl DivingFishClient {
-    pub fn new() -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-            .unwrap_or_default();
-        Self { client }
+/// Identity shown on the consent page, e.g. `QQ 12*****89`.
+pub fn binding_label(qq: &str) -> String {
+    let n = qq.chars().count();
+    if n <= 4 {
+        return format!("QQ {qq}");
     }
+    let head: String = qq.chars().take(2).collect();
+    let tail: String = qq.chars().skip(n - 2).collect();
+    format!("QQ {head}{}{tail}", "*".repeat(n - 4))
+}
 
-    /// Check if OAuth is configured (both client_id and client_secret present)
-    pub fn is_oauth_configured() -> bool {
-        CONFIG.divingfish_client_id.is_some() && CONFIG.divingfish_client_secret.is_some()
+/// Reads `sub` from a JWT payload without verifying it (consistency check only).
+pub fn token_subject(token: &str) -> Option<String> {
+    let payload = token.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload.trim_end_matches('=')).ok()?;
+    serde_json::from_slice::<Value>(&bytes).ok()?.get("sub")?.as_str().map(str::to_string)
+}
+
+async fn oauth_post<T: serde::de::DeserializeOwned>(endpoint: &str, form: &[(&str, &str)]) -> Result<T> {
+    if !CONFIG.df_oauth_enabled() {
+        return Err(AppError::DfToken);
     }
-
-    pub fn map_combo(fc: Option<&str>) -> ComboStatus {
-        match fc {
-            Some("fc") => ComboStatus::FC,
-            Some("fcp") => ComboStatus::FCP,
-            Some("ap") => ComboStatus::AP,
-            Some("app") => ComboStatus::APP,
-            _ => ComboStatus::None,
-        }
+    let resp = HTTP.post(format!("{}{endpoint}", CONFIG.df_auth_url)).form(form).send().await?;
+    if resp.status() == StatusCode::OK {
+        return Ok(resp.json().await?);
     }
+    let body: Value = resp.json().await.unwrap_or_default();
+    Err(match body.get("error").and_then(Value::as_str).unwrap_or_default() {
+        "consent_required" => AppError::DfNotAuthorized,
+        "subject_mismatch" => AppError::DfBindingMismatch,
+        "invalid_grant" => AppError::DfConfirmationCode,
+        _ => AppError::DfOAuth,
+    })
+}
 
-    pub fn map_sync(fs: Option<&str>) -> SyncStatus {
-        match fs {
-            Some("fs") => SyncStatus::FS,
-            Some("fsp") => SyncStatus::FSP,
-            Some("fsd") | Some("fdx") => SyncStatus::FDX,
-            Some("fsdp") | Some("fdxp") => SyncStatus::FDXP,
-            Some("sync") => SyncStatus::Sync,
-            _ => SyncStatus::None,
-        }
+fn credentials() -> (&'static str, &'static str) {
+    (CONFIG.df_client_id.as_deref().unwrap_or_default(), CONFIG.df_client_secret.as_deref().unwrap_or_default())
+}
+
+/// Starts binding; also drops the cached token so a re-bind takes effect at once.
+pub async fn device_authorization(qq: &str) -> Result<DeviceAuthorization> {
+    let sref = subject_ref(qq);
+    if let Ok(mut t) = TOKENS.lock() {
+        t.remove(&sref);
     }
+    let (id, secret) = credentials();
+    let label = binding_label(qq);
+    let form = [
+        ("client_id", id),
+        ("client_secret", secret),
+        ("scope", CONFIG.df_scope.as_str()),
+        ("subject_ref", sref.as_str()),
+        ("binding_label", label.as_str()),
+        ("handoff", "code"),
+    ];
+    oauth_post("/oauth/device_authorization", &form).await
+}
 
-    pub fn convert_score(s: DfScore, is_new: bool) -> Option<ScoreRecord> {
-        // Exclude UTAGE charts (song_id >= 100000) from standard/dx rating calculations
-        if s.song_id >= 100000 {
-            return None;
-        }
+async fn redeem(qq: &str, code: &str) -> Result<AccessToken> {
+    let (id, secret) = credentials();
+    let sref = subject_ref(qq);
+    let form = [
+        ("grant_type", CONFIRMATION_CODE_GRANT),
+        ("client_id", id),
+        ("client_secret", secret),
+        ("confirmation_code", code),
+        ("subject_ref", sref.as_str()),
+    ];
+    oauth_post("/oauth/token", &form).await
+}
 
-        let song_type = match s.song_type.as_deref() {
-            Some("DX") => SongType::Deluxe,
-            Some("UTAGE") => SongType::Utage,
-            _ => SongType::Standard,
-        };
-
-        let rating = if let Some(ra) = s.ra {
-            if ra > 0 {
-                ra
-            } else {
-                compute_single_rating(s.ds, s.achievements)
-            }
-        } else {
-            compute_single_rating(s.ds, s.achievements)
-        };
-
-        let rate = s.rate.unwrap_or_else(|| {
-            crate::core::calc::rating::get_rate_string(s.achievements).to_string()
-        });
-
-        Some(ScoreRecord {
-            song_id: s.song_id,
-            title: s.title,
-            level_index: s.level_index,
-            song_type,
-            ds: s.ds,
-            achievements: s.achievements,
-            dx_score: s.dx_score.unwrap_or(0),
-            dx_rating: rating,
-            rate,
-            fc: Self::map_combo(s.fc.as_deref()),
-            fs: Self::map_sync(s.fs.as_deref()),
-            is_new,
-        })
-    }
-
-    // ==========================================
-    // OAuth 2.0 Flow Support
-    // ==========================================
-
-    /// Start Device Authorization Flow for binding a user
-    pub async fn start_device_binding(
-        &self,
-        external_id: &str,
-        label: Option<&str>,
-    ) -> Result<DeviceAuthResponse, AppError> {
-        let client_id = CONFIG.divingfish_client_id.as_deref().ok_or_else(|| {
-            AppError::InvalidInput("水鱼 OAuth client_id 未配置 (DIVINGFISH_CLIENT_ID)".into())
-        })?;
-        let client_secret = CONFIG.divingfish_client_secret.as_deref().ok_or_else(|| {
-            AppError::InvalidInput("水鱼 OAuth client_secret 未配置 (DIVINGFISH_CLIENT_SECRET)".into())
-        })?;
-
-        let subject_ref = compute_subject_ref(client_id, external_id);
-        let binding_label = label
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| mask_qq(external_id));
-
-        let auth_url = "https://auth.diving-fish.com/oauth/device_authorization";
-        let resp = self
-            .client
-            .post(auth_url)
-            .form(&[
-                ("client_id", client_id),
-                ("client_secret", client_secret),
-                ("scope", "prober.records.read"),
-                ("subject_ref", &subject_ref),
-                ("binding_label", &binding_label),
-            ])
-            .send()
-            .await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
-            return Err(AppError::Network(format!(
-                "发起水鱼设备码绑定失败 (HTTP {status}): {text}"
-            )));
-        }
-
-        let body: DeviceAuthResponse = resp.json().await?;
-        Ok(body)
-    }
-
-    /// Obtain or return cached access token via `urn:diving-fish:params:oauth:grant-type:on-behalf-of`
-    pub async fn get_access_token(&self, subject: &str) -> Result<String, AppError> {
-        let client_id = CONFIG.divingfish_client_id.as_deref().ok_or_else(|| {
-            AppError::InvalidInput("水鱼 OAuth client_id 未配置".into())
-        })?;
-        let client_secret = CONFIG.divingfish_client_secret.as_deref().ok_or_else(|| {
-            AppError::InvalidInput("水鱼 OAuth client_secret 未配置".into())
-        })?;
-
-        // 1. Check local in-memory cache (valid for 5 minutes, leave 30s buffer)
+/// Token to act on behalf of the user; cached until shortly before expiry.
+pub async fn access_token(qq: &str, refresh: bool) -> Result<String> {
+    let sref = subject_ref(qq);
+    if let Ok(mut cache) = TOKENS.lock() {
+        if refresh {
+            cache.remove(&sref);
+        } else if let Some((tok, exp)) = cache.get(&sref)
+            && *exp > Instant::now()
         {
-            let cache = TOKEN_CACHE.read().unwrap();
-            if let Some((tok, exp)) = cache.get(subject) {
-                if Instant::now() + Duration::from_secs(30) < *exp {
-                    return Ok(tok.clone());
-                }
-            }
-        }
-
-        // 2. Token exchange request
-        let token_url = "https://auth.diving-fish.com/oauth/token";
-        let resp = self
-            .client
-            .post(token_url)
-            .form(&[
-                (
-                    "grant_type",
-                    "urn:diving-fish:params:oauth:grant-type:on-behalf-of",
-                ),
-                ("client_id", client_id),
-                ("client_secret", client_secret),
-                ("subject", subject),
-                ("scope", "prober.records.read"),
-            ])
-            .send()
-            .await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let err_json: serde_json::Value = resp.json().await.unwrap_or_default();
-            let error_code = err_json.get("error").and_then(|v| v.as_str()).unwrap_or("");
-            if error_code == "consent_required" {
-                return Err(AppError::NotFound(
-                    "用户未授权水鱼查分 (consent_required)。".into(),
-                ));
-            } else if error_code == "slow_down" || status.as_u16() == 429 {
-                return Err(AppError::Network(
-                    "换票过于频繁，已触发限流 (slow_down)，请稍后重试。".into(),
-                ));
-            }
-            let desc = err_json
-                .get("error_description")
-                .and_then(|v| v.as_str())
-                .unwrap_or(error_code);
-            return Err(AppError::Network(format!(
-                "水鱼 OAuth 换票失败 (HTTP {status}): {desc}"
-            )));
-        }
-
-        let body: OAuthTokenResponse = resp.json().await?;
-        let expires_at = Instant::now() + Duration::from_secs(body.expires_in);
-        {
-            let mut cache = TOKEN_CACHE.write().unwrap();
-            cache.insert(subject.to_string(), (body.access_token.clone(), expires_at));
-        }
-
-        Ok(body.access_token)
-    }
-
-    /// Query player full records via OAuth Bearer token (`GET /player/records`)
-    pub async fn query_records_oauth(
-        &self,
-        subject: &str,
-    ) -> Result<OAuthRecordsResponse, AppError> {
-        let token = self.get_access_token(subject).await?;
-        let url = "https://www.diving-fish.com/api/maimaidxprober/player/records";
-        let resp = self
-            .client
-            .get(url)
-            .header("Authorization", format!("Bearer {token}"))
-            .send()
-            .await?;
-
-        if resp.status().as_u16() == 401 {
-            // Invalidate cached token
-            let mut cache = TOKEN_CACHE.write().unwrap();
-            cache.remove(subject);
-            return Err(AppError::Network("OAuth 令牌已失效，请重试".into()));
-        }
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
-            return Err(AppError::Network(format!(
-                "获取水鱼成绩失败 (HTTP {status}): {text}"
-            )));
-        }
-
-        let body: OAuthRecordsResponse = resp.json().await?;
-        Ok(body)
-    }
-
-    /// Query single song records via OAuth (`POST /player/record`)
-    pub async fn query_song_record_oauth(
-        &self,
-        subject: &str,
-        music_id: u32,
-    ) -> Result<Vec<ScoreRecord>, AppError> {
-        let token = self.get_access_token(subject).await?;
-        let url = "https://www.diving-fish.com/api/maimaidxprober/player/record";
-        let resp = self
-            .client
-            .post(url)
-            .header("Authorization", format!("Bearer {token}"))
-            .json(&serde_json::json!({ "music_id": [music_id] }))
-            .send()
-            .await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
-            return Err(AppError::Network(format!(
-                "获取水鱼单曲成绩失败 (HTTP {status}): {text}"
-            )));
-        }
-
-        // Response is a map of music_id -> Vec<DfScore> or array
-        let body: serde_json::Value = resp.json().await?;
-        let mut results = Vec::new();
-        if let Some(map) = body.as_object() {
-            for (_, list_val) in map {
-                if let Ok(scores) = serde_json::from_value::<Vec<DfScore>>(list_val.clone()) {
-                    for s in scores {
-                        if let Some(rec) = Self::convert_score(s, false) {
-                            results.push(rec);
-                        }
-                    }
-                }
-            }
-        } else if let Ok(scores) = serde_json::from_value::<Vec<DfScore>>(body) {
-            for s in scores {
-                if let Some(rec) = Self::convert_score(s, false) {
-                    results.push(rec);
-                }
-            }
-        }
-
-        Ok(results)
-    }
-
-    /// Query player plate records via OAuth (`POST /player/plate`)
-    pub async fn query_plate_records_oauth(
-        &self,
-        subject: &str,
-        versions: &[&str],
-    ) -> Result<Vec<ScoreRecord>, AppError> {
-        let token = self.get_access_token(subject).await?;
-        let url = "https://www.diving-fish.com/api/maimaidxprober/player/plate";
-        let resp = self
-            .client
-            .post(url)
-            .header("Authorization", format!("Bearer {token}"))
-            .json(&serde_json::json!({ "version": versions }))
-            .send()
-            .await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
-            return Err(AppError::Network(format!(
-                "获取水鱼牌子成绩失败 (HTTP {status}): {text}"
-            )));
-        }
-
-        let body: DfPlateResponse = resp.json().await?;
-        let mut results = Vec::new();
-        if let Some(verlist) = body.verlist {
-            for s in verlist {
-                if let Some(rec) = Self::convert_score(s, false) {
-                    results.push(rec);
-                }
-            }
-        }
-        Ok(results)
-    }
-
-    /// Query player userinfo via OAuth (`GET /oauth/userinfo`)
-    pub async fn query_userinfo(&self, subject: &str) -> Result<OAuthUserInfoResponse, AppError> {
-        let token = self.get_access_token(subject).await?;
-        let url = "https://auth.diving-fish.com/oauth/userinfo";
-        let resp = self
-            .client
-            .get(url)
-            .header("Authorization", format!("Bearer {token}"))
-            .send()
-            .await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
-            return Err(AppError::Network(format!(
-                "获取水鱼用户信息失败 (HTTP {status}): {text}"
-            )));
-        }
-
-        let body: OAuthUserInfoResponse = resp.json().await?;
-        Ok(body)
-    }
-
-    /// Revoke token via OAuth (`POST /oauth/revoke`)
-    pub async fn revoke_token(&self, token: &str) -> Result<(), AppError> {
-        let client_id = CONFIG.divingfish_client_id.as_deref().ok_or_else(|| {
-            AppError::InvalidInput("水鱼 OAuth client_id 未配置".into())
-        })?;
-        let client_secret = CONFIG.divingfish_client_secret.as_deref().ok_or_else(|| {
-            AppError::InvalidInput("水鱼 OAuth client_secret 未配置".into())
-        })?;
-
-        let url = "https://auth.diving-fish.com/oauth/revoke";
-        let _ = self
-            .client
-            .post(url)
-            .form(&[
-                ("token", token),
-                ("client_id", client_id),
-                ("client_secret", client_secret),
-            ])
-            .send()
-            .await;
-        Ok(())
-    }
-
-    /// Convert full player records into standard PlayerB50 structure
-    pub fn compute_b50_from_records(
-        resp: OAuthRecordsResponse,
-        fallback_name: &str,
-    ) -> PlayerB50 {
-        let music_db = MUSIC_DB.read().unwrap();
-        let mut sd_candidates: Vec<ScoreRecord> = Vec::new();
-        let mut dx_candidates: Vec<ScoreRecord> = Vec::new();
-
-        if let Some(records) = resp.records {
-            for score in records {
-                let song_id_str = score.song_id.to_string();
-                let is_new = if let Some(song) = music_db.get_by_id(&song_id_str) {
-                    song.basic_info.is_new
-                } else {
-                    false
-                };
-
-                if let Some(rec) = Self::convert_score(score, is_new) {
-                    if is_new {
-                        dx_candidates.push(rec);
-                    } else {
-                        sd_candidates.push(rec);
-                    }
-                }
-            }
-        }
-
-        // Sort descending by dx_rating, then achievements
-        sd_candidates.sort_by(|a, b| {
-            b.dx_rating
-                .cmp(&a.dx_rating)
-                .then_with(|| b.achievements.partial_cmp(&a.achievements).unwrap())
-        });
-        dx_candidates.sort_by(|a, b| {
-            b.dx_rating
-                .cmp(&a.dx_rating)
-                .then_with(|| b.achievements.partial_cmp(&a.achievements).unwrap())
-        });
-
-        let b35: Vec<ScoreRecord> = sd_candidates.into_iter().take(35).collect();
-        let b15: Vec<ScoreRecord> = dx_candidates.into_iter().take(15).collect();
-
-        let b35_rating: u32 = b35.iter().map(|s| s.dx_rating).sum();
-        let b15_rating: u32 = b15.iter().map(|s| s.dx_rating).sum();
-        let total_rating = resp.rating.unwrap_or(b35_rating + b15_rating);
-
-        PlayerB50 {
-            nickname: resp
-                .nickname
-                .or(resp.username)
-                .unwrap_or_else(|| fallback_name.to_string()),
-            rating: total_rating,
-            b35,
-            b15,
-            b35_rating,
-            b15_rating,
-            plate: resp.plate,
-            course_rank: resp.additional_rating.unwrap_or(0),
-            class_rank: 0,
+            return Ok(tok.clone());
         }
     }
-
-    // ==========================================
-    // High-Level Query Methods (with OAuth dispatch & Fallback)
-    // ==========================================
-
-    // ==========================================
-    // High-Level Query Methods (with OAuth dispatch & Fallback)
-    // ==========================================
-
-    /// Query player B50 via QQ number (tries OAuth ref, then fallback to public /query/player, with rich multi-scenario guidance)
-    pub async fn query_b50_by_qq(&self, qq: &str) -> Result<PlayerB50, AppError> {
-        if Self::is_oauth_configured() {
-            let client_id = CONFIG.divingfish_client_id.as_deref().unwrap();
-            let subject = format!("ref:{}", compute_subject_ref(client_id, qq));
-
-            match self.query_records_oauth(&subject).await {
-                Ok(records_resp) => {
-                    return Ok(Self::compute_b50_from_records(
-                        records_resp,
-                        &format!("QQ:{qq}"),
-                    ));
-                }
-                Err(err) => {
-                    log::info!("DivingFish OAuth query for QQ {qq} unfulfilled ({err}), falling back to public endpoint");
-                }
-            }
-        }
-
-        // Fallback: Legacy / Public B50 endpoint
-        match self.query_legacy_b50_by_qq(qq).await {
-            Ok(b50) => Ok(b50),
-            Err(legacy_err) => {
-                // Generate friendly multi-scenario guidance
-                let mut hint = format!(
-                    "⚠️ 水鱼查分失败 (QQ: {qq})\n【未找到公开成绩或未授权】\n\n📌 解决方案（任选其一）："
-                );
-
-                if Self::is_oauth_configured() {
-                    if let Ok(dev) = self.start_device_binding(qq, None).await {
-                        hint.push_str(&format!(
-                            "\n1️⃣ 【水鱼 OAuth 授权（推荐）】\n在浏览器打开下方链接完成 1 次授权绑定（10分钟有效）：\n👉 {}\n绑定后查分无需公开隐私设置即可直接生效。",
-                            dev.verification_uri_complete
-                        ));
-                    } else {
-                        hint.push_str("\n1️⃣ 【水鱼 OAuth 授权】请使用 `mai_bind_player(qq=\"...\")` 获取授权链接完成绑定。");
-                    }
-                }
-
-                hint.push_str("\n2️⃣ 【公开查分权限】登录水鱼查分器 (https://www.diving-fish.com/maimaidx/prober/)，在「编辑个人资料」中勾选【允许其他人查询成绩】。");
-                hint.push_str("\n3️⃣ 【绑定用户名】若已注册水鱼，可使用 `username=\"水鱼用户名\"` 查分，或使用 `mai_bind_player(divingfish_username=\"...\")`。");
-                hint.push_str("\n4️⃣ 【切换落雪源】可使用参数 `source=\"lxns\"` 或绑定落雪查分器。");
-
-                log::warn!("DivingFish query failed for QQ {qq}: {legacy_err}");
-                Err(AppError::NotFound(hint))
-            }
-        }
+    let (id, secret) = credentials();
+    let subject = format!("ref:{sref}");
+    let form = [
+        ("grant_type", ON_BEHALF_OF_GRANT),
+        ("client_id", id),
+        ("client_secret", secret),
+        ("subject", subject.as_str()),
+        ("scope", CONFIG.df_scope.as_str()),
+    ];
+    let token: AccessToken = oauth_post("/oauth/token", &form).await?;
+    if let Ok(mut cache) = TOKENS.lock() {
+        let ttl = Duration::from_secs(token.expires_in.saturating_sub(EXPIRES_MARGIN));
+        cache.insert(sref, (token.access_token.clone(), Instant::now() + ttl));
     }
-
-    /// Query player B50 via username (tries OAuth username:..., then fallback to public /query/player)
-    pub async fn query_b50_by_username(&self, username: &str) -> Result<PlayerB50, AppError> {
-        if Self::is_oauth_configured() {
-            let subject = format!("username:{username}");
-            if let Ok(records_resp) = self.query_records_oauth(&subject).await {
-                return Ok(Self::compute_b50_from_records(records_resp, username));
-            }
-        }
-
-        // Fallback: Legacy / Public B50 endpoint
-        match self.query_legacy_b50_by_username(username).await {
-            Ok(b50) => Ok(b50),
-            Err(_) => {
-                let mut hint = format!(
-                    "⚠️ 水鱼查分失败 (用户名: {username})\n【未找到公开成绩或用户名不存在】\n\n📌 解决方案："
-                );
-                hint.push_str("\n1️⃣ 请确认水鱼查分器用户名是否拼写正确（区分大小写）。");
-                hint.push_str("\n2️⃣ 登录水鱼查分器官网，在「编辑个人资料」中确认已勾选【允许其他人查询成绩】。");
-                hint.push_str("\n3️⃣ 若使用 QQ 查分，可直接指定 `qq=\"你的QQ\"`。");
-                hint.push_str("\n4️⃣ 可使用 `source=\"lxns\"` 切换至落雪查分网。");
-                Err(AppError::NotFound(hint))
-            }
-        }
-    }
-
-    /// Query player full records for a user (by QQ or username)
-    pub async fn query_all_records(&self, qq: Option<&str>, username: Option<&str>) -> Result<Vec<ScoreRecord>, AppError> {
-        if Self::is_oauth_configured() {
-            let subject = if let (Some(client_id), Some(q)) = (CONFIG.divingfish_client_id.as_deref(), qq) {
-                Some(format!("ref:{}", compute_subject_ref(client_id, q)))
-            } else {
-                username.map(|u| format!("username:{u}"))
-            };
-
-            if let Some(sub) = subject {
-                if let Ok(resp) = self.query_records_oauth(&sub).await {
-                    let mut all_scores = Vec::new();
-                    if let Some(records) = resp.records {
-                        for s in records {
-                            if let Some(rec) = Self::convert_score(s, false) {
-                                all_scores.push(rec);
-                            }
-                        }
-                    }
-                    return Ok(all_scores);
-                }
-            }
-        }
-
-        // Fallback to B50 records
-        let b50 = if let Some(u) = username {
-            self.query_b50_by_username(u).await?
-        } else if let Some(q) = qq {
-            self.query_b50_by_qq(q).await?
-        } else {
-            return Err(AppError::InvalidInput("请提供 QQ 号或水鱼用户名".into()));
-        };
-
-        Ok(b50.b35.into_iter().chain(b50.b15.into_iter()).collect())
-    }
-
-    // ==========================================
-    // Legacy / Public Endpoints
-    // ==========================================
-
-    async fn query_legacy_b50_by_qq(&self, qq: &str) -> Result<PlayerB50, AppError> {
-        let url = "https://www.diving-fish.com/api/maimaidxprober/query/player";
-        let mut req = self
-            .client
-            .post(url)
-            .json(&serde_json::json!({ "qq": qq, "b50": true }));
-
-        if let Some(token) = &CONFIG.divingfish_token {
-            req = req.header("developer-token", token);
-        }
-
-        let resp = req.send().await?;
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
-            return Err(AppError::NotFound(format!(
-                "水鱼查分未找到用户 QQ: {qq} (HTTP {status}): {text}"
-            )));
-        }
-
-        let body: DfB50Response = resp.json().await?;
-        let charts = body.charts.ok_or_else(|| {
-            AppError::NotFound(body.message.unwrap_or_else(|| "未找到成绩数据".into()))
-        })?;
-
-        let b35: Vec<ScoreRecord> = charts
-            .sd
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|s| Self::convert_score(s, false))
-            .collect();
-
-        let b15: Vec<ScoreRecord> = charts
-            .dx
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|s| Self::convert_score(s, true))
-            .collect();
-
-        let b35_rating: u32 = b35.iter().map(|s| s.dx_rating).sum();
-        let b15_rating: u32 = b15.iter().map(|s| s.dx_rating).sum();
-        let total_rating = body.rating.unwrap_or(b35_rating + b15_rating);
-
-        Ok(PlayerB50 {
-            nickname: body.nickname.unwrap_or_else(|| format!("QQ:{qq}")),
-            rating: total_rating,
-            b35,
-            b15,
-            b35_rating,
-            b15_rating,
-            plate: body.plate,
-            course_rank: body.additional_rating.unwrap_or(0),
-            class_rank: 0,
-        })
-    }
-
-    async fn query_legacy_b50_by_username(&self, username: &str) -> Result<PlayerB50, AppError> {
-        let url = "https://www.diving-fish.com/api/maimaidxprober/query/player";
-        let req = self
-            .client
-            .post(url)
-            .json(&serde_json::json!({ "username": username, "b50": true }));
-
-        let resp = req.send().await?;
-        if !resp.status().is_success() {
-            return Err(AppError::NotFound(format!("水鱼未找到用户名: {username}")));
-        }
-
-        let body: DfB50Response = resp.json().await?;
-        let charts = body.charts.ok_or_else(|| AppError::NotFound("未找到成绩数据".into()))?;
-
-        let b35: Vec<ScoreRecord> = charts
-            .sd
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|s| Self::convert_score(s, false))
-            .collect();
-
-        let b15: Vec<ScoreRecord> = charts
-            .dx
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|s| Self::convert_score(s, true))
-            .collect();
-
-        let b35_rating: u32 = b35.iter().map(|s| s.dx_rating).sum();
-        let b15_rating: u32 = b15.iter().map(|s| s.dx_rating).sum();
-
-        Ok(PlayerB50 {
-            nickname: body.nickname.unwrap_or_else(|| username.to_string()),
-            rating: body.rating.unwrap_or(b35_rating + b15_rating),
-            b35,
-            b15,
-            b35_rating,
-            b15_rating,
-            plate: body.plate,
-            course_rank: body.additional_rating.unwrap_or(0),
-            class_rank: 0,
-        })
-    }
+    Ok(token.access_token)
 }
 
+/// Redeems the confirmation code and verifies the grant belongs to this QQ.
+pub async fn complete_binding(qq: &str, code: &str) -> Result<()> {
+    let redeemed = redeem(qq, code).await?;
+    let token = match access_token(qq, true).await {
+        Err(AppError::DfNotAuthorized) => return Err(AppError::DfBindingMismatch),
+        other => other?,
+    };
+    if redeemed.sub.is_some() && token_subject(&token) != redeemed.sub {
+        return Err(AppError::DfBindingMismatch);
+    }
+    Ok(())
+}
+
+const CONFIRMATION_ALPHABET: &str = "BCDFGHJKLMNPQRSTVWXZ";
+
+/// Normalises a whole message into `XXXX-XXXX-XXXX`, or `None` if it is not a code.
+pub fn extract_confirmation_code(text: &str) -> Option<String> {
+    let mut value = text.trim();
+    for prefix in ["确认码", "授权码"] {
+        if let Some(rest) = value.strip_prefix(prefix) {
+            let rest = rest.trim_start().trim_start_matches([':', '：']).trim_start();
+            if !rest.is_empty() && !rest.contains(char::is_whitespace) {
+                value = rest;
+            }
+            break;
+        }
+    }
+    let body: String = value
+        .chars()
+        .filter(|c| !c.is_whitespace() && !matches!(c, '-' | '—' | '_'))
+        .collect::<String>()
+        .to_uppercase();
+    if body.chars().count() != 12 || !body.chars().all(|c| CONFIRMATION_ALPHABET.contains(c)) {
+        return None;
+    }
+    Some(format!("{}-{}-{}", &body[0..4], &body[4..8], &body[8..12]))
+}

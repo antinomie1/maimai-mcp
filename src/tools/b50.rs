@@ -1,102 +1,146 @@
-use crate::core::clients::divingfish::DivingFishClient;
-use crate::core::clients::lxns::LxnsClient;
-use crate::core::models::user::ScoreSource;
-use crate::draw::b50::{B50Renderer, B50Theme};
-use crate::tools::ToolHelper;
-use rmcp::model::CallToolResult;
+use super::{Reply, ensure_data, render, require_qq, wants_image};
+use crate::core::clients::divingfish::DivingFish;
+use crate::core::models::{Best50, Played, Player, Service, Theme, User};
+use crate::core::music::data;
+use crate::core::{service, store};
+use crate::draw::{best50::draw_best50, text::text_to_image};
+use crate::error::{AppError, Result};
+use crate::util::cn_datetime;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+pub const MESSAGE: &str = "可使用「主题」指令更换主题，「数据源」指令更换指定查分器。";
+
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct MaiB50Params {
-    /// User QQ number (auto-extracted from context if available)
+pub struct B50Params {
+    /// User QQ number (from context)
     pub qq: Option<String>,
-    /// DivingFish username or LXNS user identifier (optional override)
+    /// DivingFish username to query another player instead of the QQ's binding
     pub username: Option<String>,
-    /// Score source: "divingfish" or "lxns" (defaults to user preference or divingfish)
-    pub source: Option<String>,
-    /// B50 theme: "circle" or "prism_plus" (defaults to user preference or circle)
-    pub theme: Option<String>,
-    /// Output format: "image" (default), "text", or "both"
+    /// true = AP 50 (best 50 among AP/AP+ charts)
+    pub all_perfect: Option<bool>,
+    /// "image" (default), "text" or "both"
     pub output_format: Option<String>,
 }
 
-pub struct B50Tool;
+fn summary(player: &Player, b: &Best50, ap: bool) -> String {
+    let line = |i: usize, p: &Played| {
+        format!("{}. [{}] {} ({}) {:.4}% Ra {}\n", i + 1, p.song_id, p.song_name, p.level, p.achievements, p.rating)
+    };
+    let mut out = format!(
+        "【{} 的 {}】DX Rating: {} (B35: {} + B15: {})\n",
+        player.name,
+        if ap { "AP50" } else { "B50" },
+        player.rating,
+        b.sd_total,
+        b.dx_total
+    );
+    out += "--- 旧版本 B35 ---\n";
+    b.sd.iter().enumerate().for_each(|(i, p)| out += &line(i, p));
+    out += "--- 新版本 B15 ---\n";
+    b.dx.iter().enumerate().for_each(|(i, p)| out += &line(i, p));
+    out + MESSAGE
+}
 
-impl B50Tool {
-    pub async fn execute(params: MaiB50Params) -> Result<CallToolResult, String> {
-        let (user_cfg, resolved_src, default_theme) = ToolHelper::resolve_user_config(
-            params.qq.as_deref(),
-            params.username.as_deref(),
-            params.source.as_deref(),
-        );
-
-        let selected_theme = match params.theme.as_deref() {
-            Some("prism_plus") => B50Theme::PrismPlus,
-            Some("circle") => B50Theme::Circle,
-            _ => default_theme,
-        };
-
-        let b50_result = match resolved_src {
-            ScoreSource::DivingFish => {
-                let df_client = DivingFishClient::new();
-                if let Some(ref uname) = user_cfg.divingfish_username {
-                    df_client.query_b50_by_username(uname).await
-                } else if !user_cfg.qq.is_empty() {
-                    df_client.query_b50_by_qq(&user_cfg.qq).await
-                } else {
-                    return Err("未指定 QQ 号或水鱼用户名，请提供 `qq` 参数或先绑定账号。".to_string());
-                }
-            }
-            ScoreSource::Lxns => {
-                let lxns_client = LxnsClient::new();
-                let qq_opt = if user_cfg.qq.is_empty() { None } else { Some(user_cfg.qq.as_str()) };
-                lxns_client.query_b50_smart(qq_opt, user_cfg.lxns_friend_code, user_cfg.lxns_token.as_deref()).await
-            }
-        };
-
-        let player_b50 = b50_result.map_err(|e| format!("查询 B50 失败: {e}"))?;
-
-        // Generate text summary
-        let mut summary = format!(
-            "【{} 的舞萌 DX B50 成绩】\nDX Rating: {} (旧曲 B35: {} + 新曲 B15: {})\n",
-            player_b50.nickname, player_b50.rating, player_b50.b35_rating, player_b50.b15_rating
-        );
-        if let Some(ref plate) = player_b50.plate {
-            summary.push_str(&format!("佩戴名牌: {plate}\n"));
-        }
-        summary.push_str("--- Top 3 单曲 ---\n");
-        for (i, song) in player_b50.b35.iter().take(3).enumerate() {
-            summary.push_str(&format!(
-                "旧曲 {}. {} [{:.4}% -> Ra:{}]\n",
-                i + 1, song.title, song.achievements, song.dx_rating
-            ));
-        }
-        for (i, song) in player_b50.b15.iter().take(3).enumerate() {
-            summary.push_str(&format!(
-                "新曲 {}. {} [{:.4}% -> Ra:{}]\n",
-                i + 1, song.title, song.achievements, song.dx_rating
-            ));
-        }
-
-        // Render Image
-        let b50_img = if params.output_format.as_deref() == Some("text") {
-            None
-        } else {
-            match B50Renderer::render_b50_with_theme(&player_b50, selected_theme) {
-                Ok(img) => Some(img),
-                Err(e) => {
-                    log::warn!("Failed to render B50 image: {e}");
-                    None
-                }
-            }
-        };
-
-        Ok(ToolHelper::format_result(
-            b50_img.as_ref(),
-            "b50",
-            &summary,
-            params.output_format.as_deref(),
-        ))
+pub async fn b50(p: B50Params) -> Result<Reply> {
+    let d = data();
+    ensure_data(&d)?;
+    let username = p.username.as_deref().map(str::trim).filter(|u| !u.is_empty()).map(str::to_string);
+    let qq = p.qq.as_deref().map(str::trim).filter(|q| !q.is_empty());
+    let user = match (qq, &username) {
+        (Some(qq), None) => service::auth_user(qq)?,
+        (Some(qq), Some(_)) => store::get_user(qq)?,
+        (None, Some(_)) => User::default(),
+        (None, None) => return Err(AppError::Msg("请提供 QQ 号或水鱼用户名。".into())),
+    };
+    let ap = p.all_perfect.unwrap_or(false);
+    if ap && user.service == Service::Lxns && username.is_none() && crate::config::CONFIG.lxns_dev_token.is_none() {
+        return Err(AppError::Msg("BOT管理员尚未配置落雪开发者Token，无法查询 AP50。".into()));
     }
+    let (player, b) = service::best50(&user, username.as_deref(), ap).await?;
+    let text = summary(&player, &b, ap);
+    if !wants_image(p.output_format.as_deref()) {
+        return Ok(Reply::Text(text));
+    }
+    let (theme, svc) =
+        if username.is_some() { (Theme::PrismPlus, Service::DivingFish) } else { (user.theme, user.service) };
+    let extras = service::b50_extras(&player, username.is_none().then_some(user.qq.as_str())).await;
+    let img = render(move || Some(draw_best50(&d, &player, &b, theme, svc, extras))).await?;
+    Ok(Reply::image(img, "b50", text))
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RankingParams {
+    /// DivingFish username to locate in the ranking (optional)
+    pub name: Option<String>,
+    /// Page of the ranking list (50 per page)
+    pub page: Option<usize>,
+    /// Set together with `mine=true` to find the QQ user's own rank
+    pub qq: Option<String>,
+    /// true = 我的排名 (rank of the QQ user's bound DivingFish account)
+    pub mine: Option<bool>,
+    pub output_format: Option<String>,
+}
+
+/// 查看排名 / 我的排名 (DivingFish only).
+pub async fn rating_ranking(p: RankingParams) -> Result<Reply> {
+    let ranks = DivingFish::rating_ranking().await?;
+    if p.mine.unwrap_or(false) {
+        let qq = require_qq(p.qq.as_deref())?;
+        let info = DivingFish::new(Some(qq), None).query_b50().await?;
+        let me = info.username.unwrap_or_default();
+        return Ok(Reply::Text(match ranks.iter().position(|(u, _)| *u == me) {
+            Some(i) => format!("您的Rating为「{}」，排名第「{}」名", ranks[i].1, i + 1),
+            None => "未在查分器排行榜中找到您的记录。".into(),
+        }));
+    }
+    let now = cn_datetime();
+    if let Some(name) = p.name.as_deref().map(|n| n.trim().to_lowercase()).filter(|n| !n.is_empty()) {
+        return Ok(Reply::Text(match ranks.iter().position(|(u, _)| u.to_lowercase() == name) {
+            Some(i) => format!("截止至「{now}」玩家「{}」\n在查分器已注册用户 RA 排行第「{}」位", ranks[i].0, i + 1),
+            None => format!("未在查分器排行榜前「{}」名中找到玩家「{name}」", ranks.len()),
+        }));
+    }
+    let total_pages = ranks.len().div_ceil(50).max(1);
+    let page = p.page.unwrap_or(1).clamp(1, total_pages);
+    let start = (page - 1) * 50;
+    let mut msg = format!("截止至「{now}」，查分器已注册用户 RA 排行：\n");
+    for (i, (u, ra)) in ranks.iter().enumerate().skip(start).take(50) {
+        msg += &format!("No.{:02}.「{ra}」 {u}\n", i + 1);
+    }
+    msg += &format!("\n第「{page} / {total_pages}」页，共「{}」名玩家", ranks.len());
+    if !wants_image(p.output_format.as_deref()) {
+        return Ok(Reply::Text(msg));
+    }
+    let text = msg.clone();
+    let img = render(move || Some(text_to_image(&text))).await?;
+    Ok(Reply::image(img, "ranking", msg))
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GroupRankParams {
+    /// QQ numbers of group members to rank
+    pub qq_list: Vec<String>,
+}
+
+/// Group leaderboard by DX Rating (each member's configured source).
+pub async fn group_rank(p: GroupRankParams) -> Result<Reply> {
+    let mut set = tokio::task::JoinSet::new();
+    for qq in p.qq_list.into_iter().filter(|q| !q.trim().is_empty()) {
+        set.spawn(async move {
+            let user = store::get_user(&qq).ok()?;
+            let (player, _) = service::best50(&user, None, false).await.ok()?;
+            Some((qq, player.name, player.rating))
+        });
+    }
+    let mut ranks: Vec<(String, String, u32)> = set.join_all().await.into_iter().flatten().collect();
+    if ranks.is_empty() {
+        return Ok(Reply::Text("未查询到任何成员的成绩数据。".into()));
+    }
+    ranks.sort_by_key(|r| std::cmp::Reverse(r.2));
+    let mut out = format!("【群内 DX Rating 排行】共 {} 位玩家\n", ranks.len());
+    for (i, (qq, name, ra)) in ranks.iter().enumerate() {
+        out += &format!("No.{:02}.「{ra}」 {name} ({qq})\n", i + 1);
+    }
+    Ok(Reply::Text(out))
 }

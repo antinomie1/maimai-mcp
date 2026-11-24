@@ -2,63 +2,39 @@ pub mod divingfish;
 pub mod lxns;
 pub mod yuzuchan;
 
-use crate::core::database::user_store::UserStore;
-use crate::core::models::score::PlayerB50;
-use crate::core::models::user::ScoreSource;
-use crate::error::AppError;
-use divingfish::DivingFishClient;
-use lxns::LxnsClient;
+use std::sync::LazyLock;
+use std::time::Duration;
 
-pub struct ScoreClientManager {
-    df: DivingFishClient,
-    lxns: LxnsClient,
+/// Shared HTTP client (connection pooling across all services).
+pub static HTTP: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .user_agent(concat!("maimai-mcp/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .unwrap_or_default()
+});
+
+/// Timeout for bulk data downloads (upstream uses 180s).
+pub const BULK_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// Downloads a binary resource; `None` on any failure.
+pub async fn fetch_bytes(url: &str) -> Option<Vec<u8>> {
+    let resp = HTTP.get(url).send().await.ok()?.error_for_status().ok()?;
+    resp.bytes().await.ok().map(|b| b.to_vec())
 }
 
-impl ScoreClientManager {
-    pub fn new() -> Self {
-        Self {
-            df: DivingFishClient::new(),
-            lxns: LxnsClient::new(),
-        }
-    }
+/// QQ avatar (upstream `qqlogo`).
+pub async fn qq_avatar(qq: &str) -> Option<Vec<u8>> {
+    fetch_bytes(&format!("https://q1.qlogo.cn/g?b=qq&nk={qq}&s=100")).await
+}
 
-    /// Query player B50 with smart fallback and priority
-    pub async fn query_b50(
-        &self,
-        qq: Option<&str>,
-        username: Option<&str>,
-        source: Option<ScoreSource>,
-    ) -> Result<PlayerB50, AppError> {
-        // 1. Explicit username query
-        if let Some(name) = username {
-            return self.df.query_b50_by_username(name).await;
-        }
+/// LXNS collection asset (`plate` / `icon`) from the yuzuchan asset server.
+pub async fn online_asset(kind: &str, id: u32) -> Option<Vec<u8>> {
+    let file = format!("UI_{}_{id:06}.png", capitalize(kind));
+    fetch_bytes(&format!("https://www.yuzuchan.moe/assets/maimaidx/{kind}/{file}")).await
+}
 
-        // 2. QQ based query
-        let Some(qq_id) = qq else {
-            return Err(AppError::InvalidInput("请提供 QQ 号或用户名进行查分".into()));
-        };
-
-        let user_cfg = UserStore::get_user(qq_id);
-        let target_source = source.unwrap_or(user_cfg.default_source);
-
-        match target_source {
-            ScoreSource::DivingFish => {
-                // Try DivingFish first
-                match self.df.query_b50_by_qq(qq_id).await {
-                    Ok(b50) => Ok(b50),
-                    Err(e) => {
-                        // Fallback to LXNS if user has OAuth / token / friend code configured
-                        if let Ok(lx_b50) = self.lxns.query_b50_smart(Some(qq_id), user_cfg.lxns_friend_code, user_cfg.lxns_token.as_deref()).await {
-                            return Ok(lx_b50);
-                        }
-                        Err(e)
-                    }
-                }
-            }
-            ScoreSource::Lxns => {
-                self.lxns.query_b50_smart(Some(qq_id), user_cfg.lxns_friend_code, user_cfg.lxns_token.as_deref()).await
-            }
-        }
-    }
+pub fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
 }

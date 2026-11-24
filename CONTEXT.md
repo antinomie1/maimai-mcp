@@ -43,8 +43,8 @@
 
 ## 3. 查分数据源与身份模型
 
-* **DivingFish (水鱼查分器)**：国内主流 maimai 查分平台，支持开发者全局 Token 通过 QQ 号直查。
-* **LXNS (落雪查分器)**：现代开放 API 查分平台，支持开放接口与用户 Token。
+* **DivingFish (水鱼查分器)**：国内主流 maimai 查分平台；公开接口可查 B50，其余查询需用户完成 OAuth 授权（开发者 Token 已废弃）。
+* **LXNS (落雪查分器)**：开放 API 查分平台；用户数据通过 OAuth 授权访问，开发者 Token 用于曲库、别名与 AP50。
 * **User Identity (用户身份)**：
   - `QQ`: 用户 QQ 号（主索引键）。
   - `Service / Source`: 默认查分源（默认为 `divingfish`，支持无缝切换至 `lxns`）。

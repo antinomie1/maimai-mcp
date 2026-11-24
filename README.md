@@ -4,8 +4,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-2024_Edition-orange.svg)](https://www.rust-lang.org/)
 [![CI](https://github.com/antinomie1/maimai-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/antinomie1/maimai-mcp/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/antinomie1/maimai-mcp?color=brightgreen)](https://github.com/antinomie1/maimai-mcp/releases)
-[![License](https://img.shields.io/badge/License-BSD_2--Clause-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 - 📖 **[配置与部署教程 (docs/CONFIG_GUIDE.md)](docs/CONFIG_GUIDE.md)**
 - 📦 **[下载预编译二进制 (GitHub Releases)](https://github.com/antinomie1/maimai-mcp/releases)**
@@ -15,90 +14,60 @@
 
 ## 🌟 核心特性
 
-- ⚡ **极致性能与轻量**：采用纯 Rust 实现，冷启动速度毫秒级，空闲内存占用低于 15MB，无繁重外部 C 库依赖。
-- 🎨 **像素级纯 Rust 绘图引擎**：
-  - 本项目的绘图布局、美术资产目录格式与坐标渲染逻辑基于开源项目 [Yuri-YuzuChaN/maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX) 的绝对坐标体系进行纯 Rust 迁移与优化。
-  - 基于 `image` + `ab_glyph` 与 `rayon` 多线程流水线，严格按绝对坐标 1:1 高保真渲染 B50、单曲结算卡片、牌子进度表与运势图。
-- 🤖 **弱智能模型与小参数模型友好**：
-  - **宽容的参数归一化**：自动兼容中文难度（“紫/白/黄/红/绿”）、浮点定数转换及曲名别名模糊匹配。
-  - **防崩溃中文兜底**：查无数据或未绑定时返回结构化人类可读指引，避免小模型幻觉或复读调用栈。
-- 🚀 **开箱即用**：
-  - **双轨图文输出**：默认同时返回标准 MCP Image Content（Base64）与本地文件持久化路径，无缝对接各类 Bot 消息发送。
-  - **零门槛查分**：配置全局开发者凭据后，仅需上下文中的 QQ 号即可直出一键查分图。
+- ⚡ **高性能**：纯 Rust 实现，B50 渲染约 60 ms；定数表与完成表（43 张）多线程生成约 5 s（原版约 25 s）。封面按需并行解码不常驻内存。
+- 🎨 **像素级复刻**：按原版 PIL 绝对坐标绘制；文字排版复刻 Pillow + libraqm（HarfBuzz 整形、FreeType 取整、锚点、描边），与原版输出尺寸一致、平均像素误差 < 1/255。
+- 🔐 **OAuth 绑定**：水鱼 OAuth（授权链接 + 确认码，校验绑定归属）与落雪 OAuth（自动刷新令牌）。
+- 🔄 **数据自动更新**：启动时及每日 04:00（UTC+8）联网更新曲目（水鱼 + 落雪合并）、别名（柚子 + 落雪 + 本地）与牌子数据，并自动重绘表格；失败时回退本地暂存。
+- 🤖 **LLM 友好**：入参宽容（中文难度、别名、ID 均可），错误以可读中文返回；输出 MCP 图片 + 文本，同时保存本地图片路径。
 
 ---
 
-## 🛠️ MCP 工具清单 (Tool Registry)
+## 🛠️ MCP 工具清单
 
-所有工具均支持可选参数：`qq`（用户 QQ 号）、`username`（用户名）、`source`（`"divingfish"` 或 `"lxns"`）、`output_format`（`"image"`、`"text"`、`"both"`）。
+所有出图工具支持 `output_format`：`"image"`（默认，图片 + 文本）或 `"text"`。
 
-| 工具名称 (Tool Name) | 功能描述 | 主要返回内容 |
+| 工具 | 对应原版指令 | 功能 |
 | :--- | :--- | :--- |
-| `mai_b50` | 查询玩家最佳 50 首成绩 (B35 + B15) | B50 预览图、Rating 及单曲明细 |
-| `mai_play_score` | 查询玩家单曲/别名成绩结算卡片 | 结算图、达成率、DX分、评价等级 |
-| `mai_chart_info` | 查询谱面详情、定数与 Note 物量 | 谱面预览图、各难度定数与设计师 |
-| `mai_rise_score` | 计算提分建议与目标 Rating 差距 | 推荐刷分曲目与目标达成率 |
-| `mai_search_song` | 模糊搜索曲目与曲师版本信息 | 匹配曲目列表与难度定数 |
-| `mai_alias_query` | 查询歌曲全部已知社群别名与标签 | 别名列表与投票信息 |
-| `mai_random_song` | 按难度/定数区间随机挑选曲目 | 抽取曲目卡片与参数 |
-| `mai_what` | 类似“今天吃什么”的随机特色推歌 | 推荐曲目与特色文案 |
-| `mai_level_progress` | 查询指定等级（如 13+）的完成度汇总 | 通关/FC/AP 等级段位汇总图 |
-| `mai_plate_table` | 查询各代牌子（霸者/舞/将/极/神）进度 | 牌子完成度进度表及未通关清单 |
-| `mai_bind_player` | 绑定 QQ 到水鱼/落雪账号，或切换默认源 | 绑定确认状态与信息 |
-| `mai_user_settings` | 查看与修改个人查分偏好 | 当前绑定配置、默认源与展示偏好 |
-| `mai_fortune` | 抽取今日舞萌运势与宜忌推荐 | 运势图片、运势值与推荐曲目 |
-| `mai_group_rank` | 统计群内已绑定成员的综合 Rating 排行 | 群排行榜图表与名次 |
+| `mai_b50` | b50 / ap50 | B50 / AP50 图，可按 QQ 或水鱼用户名查询 |
+| `mai_play_score` | info | 单曲各难度成绩 |
+| `mai_song_stats` | ginfo | 谱面全服统计（文本） |
+| `mai_score_line` | 分数线 | 目标达成率允许的 GREAT 数 |
+| `mai_rise_score` | 我要在13+上5分 | 上分推荐 |
+| `mai_chart_info` | XXX是什么歌 / id | 谱面信息卡（带个人加分计算） |
+| `mai_search_song` | 查歌 / 定数查歌 / bpm查歌 / 曲师查歌 / 谱师查歌 | 搜索，多结果出曲目列表图 |
+| `mai_alias_query` | XXX有什么别名 | 别名查询 |
+| `mai_random_song` | 随个[dx][紫]13+ | 随机谱面 |
+| `mai_what` | mai什么 / 今日mai打什么上分 | 随机或推分推荐 |
+| `mai_fortune` | 今日运势 | 人品值、宜忌与推荐曲 |
+| `mai_rating_table` | 13+定数表 | 定数表 |
+| `mai_level_table` | 13+完成表 / 14ap完成表 | 等级完成表 |
+| `mai_level_progress` | 14 sss 进度 / 14ap未完成进度 | 等级进度与分类列表 |
+| `mai_level_score_list` | 13+分数列表 / 13.7分数列表 | 分数列表 |
+| `mai_plate_table` | 祝极完成表 / 牌子条件 | 牌子完成表 |
+| `mai_plate_progress` | 舞将进度 | 牌子未完成谱面 |
+| `mai_bind_divingfish` | 绑定水鱼 / 确认码 | 水鱼 OAuth 绑定 |
+| `mai_bind_lxns` | lxbind / 授权码 | 落雪 OAuth 绑定 |
+| `mai_user_settings` | 数据源 / 主题 | 查看与切换数据源、主题 |
+| `mai_rating_ranking` | 查看排名 / 我的排名 | 水鱼查分器排行榜 |
+| `mai_group_rank` | — | 群内 Rating 排行 |
+| `mai_update_data` | 更新maimai数据 / 更新别名库 / 更新定数表 | 手动更新数据与表格 |
 
 ---
 
-## ⚙️ 环境配置说明
+## ⚙️ 配置
 
-服务端支持通过环境变量或 `.env` 进行配置：
+完整说明见 [配置与部署指南](docs/CONFIG_GUIDE.md)。最小配置：
 
 ```bash
-# 水鱼查分网开发者 Token（配置后仅凭 QQ 号即可直接查分）
-DIVINGFISH_DEVELOPER_TOKEN=your_divingfish_developer_token
-
-# 落雪查分网开发者 Token（可选）
-LXNS_DEVELOPER_TOKEN=your_lxns_token
-
-# 静态资源根目录（默认 ./static 或 ../maimaiDX/static）
-MAIMAI_STATIC_DIR=./static
-
-# 本地数据与用户配置存储目录（默认 ./data）
-MAIMAI_DATA_DIR=./data
-
-# 生成图片临时保存目录（默认 ./output）
-MAIMAI_OUTPUT_DIR=./output
+MAIMAI_STATIC_DIR=/path/to/static        # 资源包中的 static 目录
+DIVINGFISH_CLIENT_ID=...                 # 水鱼 OAuth（未配置时仅 b50 可用）
+DIVINGFISH_CLIENT_SECRET=...
+LX_CLIENT_ID=... LX_CLIENT_SECRET=... REDIRECT_URI=...   # 落雪 OAuth（可选）
+LXNS_DEV_TOKEN=...                       # 落雪开发者 Token（可选）
 ```
 
----
-
-## 📁 静态资源准备与目录结构
-
-### 1. 目录结构
-请将 `static` 静态资源文件夹放置在项目根目录（或通过 `MAIMAI_STATIC_DIR` 指定绝对路径）：
-
-```
-static/
-├── font/              # 字体文件 (ResourceHanRoundedCN-Bold.ttf 等)
-├── data/              # 歌曲/别名/牌子数据缓存 (music_data.json 等)
-└── mai/
-    ├── pic/           # UI 边框、评级底图、段位图标
-    ├── cover/         # 曲目封面 (以 song_id 命名)
-    ├── plate/         # 姓名框与牌子背景
-    ├── shougou/       # 称号底图
-    └── plate_version/ # 各版本牌子标识
-```
-
-### 2. 静态资源
-
-下载并解压资源包：
-- [Cloudreve](https://cloud.yuzuchan.moe/f/34s7/Resource%20CN1.55.7z)
-- [OneDrive](https://yuzuai-my.sharepoint.com/:u:/g/personal/yuzu_yuzuchan_moe/IQBGKHie6MAaTZy3rME7Q-ruAVKgXDCKROqz5e25KtMeeVY?e=53eC6a)
-
-记下其中 `static` 目录的绝对路径（即配置中的 `MAIMAI_STATIC_DIR`）。
-请遵守上游美术与字体相关声明。
+资源包：[Cloudreve](https://cloud.yuzuchan.moe/f/34s7/Resource%20CN1.55.7z) / [OneDrive](https://yuzuai-my.sharepoint.com/:u:/g/personal/yuzu_yuzuchan_moe/IQBGKHie6MAaTZy3rME7Q-ruAVKgXDCKROqz5e25KtMeeVY?e=53eC6a)，
+增量包 [Resource 3.1.5 UPDATE](https://cloud.yuzuchan.moe/f/x3f3/Resource%203.1.5%20UPDATE.7z)。请遵守上游美术与字体声明。
 
 ---
 
@@ -118,7 +87,7 @@ cargo build --release
 ./target/release/maimai-mcp
 ```
 
-### 3. 在 AstrBot / Claude Desktop 中接入
+### 4. 在 AstrBot / Claude Desktop 中接入
 在 `mcpServers` 配置中添加：
 ```json
 {
@@ -127,8 +96,8 @@ cargo build --release
       "command": "/path/to/maimai-mcp",
       "env": {
         "MAIMAI_STATIC_DIR": "/path/to/static",
-        "DIVINGFISH_CLIENT_ID": "your_divingfish_client_id",
-        "DIVINGFISH_CLIENT_SECRET": "your_divingfish_client_secret"
+        "DIVINGFISH_CLIENT_ID": "your_client_id",
+        "DIVINGFISH_CLIENT_SECRET": "your_client_secret"
       }
     }
   }
@@ -151,7 +120,7 @@ cargo build --release
 
 ### 📜 许可证与资源权利声明
 
-- 本代码仓库采用 [BSD 2-Clause License](LICENSE) 授权开源；
+- 本代码仓库采用 [MIT License](LICENSE) 授权开源；
 - 上游参考项目协议见 [LICENSE-UPSTREAM](LICENSE-UPSTREAM)；
 - **资源版权声明**：`static` 等美术 / 字体资源**不随本代码仓库分发**，其版权以资源包与官方声明为准，**不在本开源许可证授权范围内**。请使用者自行确保素材使用的合法合规性，并遵守各字体与素材的原作者声明。
 

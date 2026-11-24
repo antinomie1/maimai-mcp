@@ -1,124 +1,214 @@
-pub mod config;
-pub mod core;
-pub mod draw;
-pub mod error;
-pub mod tools;
-
 use env_logger::Target;
-use rmcp::{
-    handler::server::wrapper::Parameters,
-    model::{CallToolResult, ContentBlock},
-    tool, tool_router, ServiceExt,
-};
-use tools::{
-    b50::{B50Tool, MaiB50Params},
-    fortune::{FortuneTool, MaiFortuneParams},
-    group_rank::{GroupRankTool, MaiGroupRankParams},
-    music::{MaiAliasQueryParams, MaiChartInfoParams, MaiSearchSongParams, MusicTools},
-    progress::{MaiLevelProgressParams, MaiPlateTableParams, ProgressTools},
-    random::{MaiRandomSongParams, MaiWhatParams, RandomTools},
-    score::{MaiPlayScoreParams, MaiRiseScoreParams, ScoreTools},
-    user::{MaiBindPlayerParams, MaiUserSettingsParams, UserTools},
-};
+use maimai_mcp::core::update;
+use maimai_mcp::tools::{b50, finish, music, progress, score, user};
+use rmcp::{ServiceExt, handler::server::wrapper::Parameters, model::CallToolResult, tool, tool_router};
 
 #[derive(Clone, Default)]
 pub struct MaimaiMcpServer;
 
+macro_rules! run {
+    ($f:expr, $fmt:expr) => {
+        Ok(finish($f.await, $fmt))
+    };
+}
+
 #[tool_router(server_handler)]
 impl MaimaiMcpServer {
-    pub fn new() -> Self {
-        Self
+    #[tool(description = "B50 / AP50 image (b50, ap50). Query by QQ (bound source) or DivingFish username.")]
+    async fn mai_b50(&self, Parameters(p): Parameters<b50::B50Params>) -> Result<CallToolResult, String> {
+        let fmt = p.output_format.clone();
+        run!(b50::b50(p), fmt.as_deref())
     }
 
-    #[tool(description = "Ping server to verify maimai-mcp connection")]
-    async fn ping(&self) -> Result<CallToolResult, String> {
-        Ok(CallToolResult::success(vec![ContentBlock::text("pong")]))
+    #[tool(description = "User's records on all difficulties of one song (info / minfo)")]
+    async fn mai_play_score(
+        &self,
+        Parameters(p): Parameters<score::PlayScoreParams>,
+    ) -> Result<CallToolResult, String> {
+        let fmt = p.output_format.clone();
+        run!(score::play_score(p), fmt.as_deref())
     }
 
-    #[tool(description = "Query player's Best 50 (B35 + B15) scores, Rating, and generate B50 overview image card")]
-    async fn mai_b50(&self, Parameters(params): Parameters<MaiB50Params>) -> Result<CallToolResult, String> {
-        B50Tool::execute(params).await
+    #[tool(
+        description = "Global play statistics of a chart: play count, fitted difficulty, average achievement (ginfo)"
+    )]
+    async fn mai_song_stats(
+        &self,
+        Parameters(p): Parameters<score::SongStatsParams>,
+    ) -> Result<CallToolResult, String> {
+        run!(score::song_stats(p), None)
     }
 
-    #[tool(description = "Query player's play score, achievements, DX rating and rank for a specific song across all difficulties and generate score结算 image card")]
-    async fn mai_play_score(&self, Parameters(params): Parameters<MaiPlayScoreParams>) -> Result<CallToolResult, String> {
-        ScoreTools::play_score(params).await
+    #[tool(
+        description = "Allowed TAP GREAT count for a target achievement line (分数线). Call without arguments for help."
+    )]
+    async fn mai_score_line(
+        &self,
+        Parameters(p): Parameters<score::ScoreLineParams>,
+    ) -> Result<CallToolResult, String> {
+        run!(score::score_line(p), None)
     }
 
-    #[tool(description = "Query song chart details, difficulty levels, internal constants (ds), charter, note counts and generate chart preview image card")]
-    async fn mai_chart_info(&self, Parameters(params): Parameters<MaiChartInfoParams>) -> Result<CallToolResult, String> {
-        MusicTools::chart_info(params).await
+    #[tool(description = "Chart recommendations that raise the user's DX Rating (我要上分 / 我要在13+上5分)")]
+    async fn mai_rise_score(&self, Parameters(p): Parameters<score::RiseParams>) -> Result<CallToolResult, String> {
+        let fmt = p.output_format.clone();
+        run!(score::rise_score(p), fmt.as_deref())
     }
 
-    #[tool(description = "Calculate score rise recommendations to step up DX Rating based on B50 floor and generate rise recommendation image")]
-    async fn mai_rise_score(&self, Parameters(params): Parameters<MaiRiseScoreParams>) -> Result<CallToolResult, String> {
-        ScoreTools::rise_score(params).await
+    #[tool(description = "Chart info card of a song found by alias, id or title (XXX是什么歌 / id xxx)")]
+    async fn mai_chart_info(
+        &self,
+        Parameters(p): Parameters<music::ChartInfoParams>,
+    ) -> Result<CallToolResult, String> {
+        let fmt = p.output_format.clone();
+        run!(music::chart_info(p), fmt.as_deref())
     }
 
-    #[tool(description = "Search songs by title, artist, genre, version, or alias")]
-    async fn mai_search_song(&self, Parameters(params): Parameters<MaiSearchSongParams>) -> Result<CallToolResult, String> {
-        MusicTools::search_song(params).await
+    #[tool(
+        description = "Search songs by title, internal constant (定数), bpm, artist (曲师) or charter (谱师) (查歌)"
+    )]
+    async fn mai_search_song(&self, Parameters(p): Parameters<music::SearchParams>) -> Result<CallToolResult, String> {
+        let fmt = p.output_format.clone();
+        run!(music::search_song(p), fmt.as_deref())
     }
 
-    #[tool(description = "Query all known aliases and nicknames for a song or reverse search song by alias")]
-    async fn mai_alias_query(&self, Parameters(params): Parameters<MaiAliasQueryParams>) -> Result<CallToolResult, String> {
-        MusicTools::alias_query(params).await
+    #[tool(description = "All known aliases of a song (XXX有什么别名)")]
+    async fn mai_alias_query(&self, Parameters(p): Parameters<music::AliasParams>) -> Result<CallToolResult, String> {
+        run!(music::alias_query(p), None)
     }
 
-    #[tool(description = "Pick a random song filtered by difficulty level, constant, or type (SD/DX) and generate song image card")]
-    async fn mai_random_song(&self, Parameters(params): Parameters<MaiRandomSongParams>) -> Result<CallToolResult, String> {
-        RandomTools::random_song(params).await
+    #[tool(description = "Random song of a level, optional difficulty colour and SD/DX type (随个[dx][紫]13+)")]
+    async fn mai_random_song(&self, Parameters(p): Parameters<music::RandomParams>) -> Result<CallToolResult, String> {
+        let fmt = p.output_format.clone();
+        run!(music::random_song(p), fmt.as_deref())
     }
 
-    #[tool(description = "Recommend what to play / eat today with randomized suggestions and generate song image card")]
-    async fn mai_what(&self, Parameters(params): Parameters<MaiWhatParams>) -> Result<CallToolResult, String> {
-        RandomTools::mai_what(params).await
+    #[tool(
+        description = "What to play today (mai什么); rise=true picks a chart that can raise rating (今日mai打什么上分)"
+    )]
+    async fn mai_what(&self, Parameters(p): Parameters<music::WhatParams>) -> Result<CallToolResult, String> {
+        let fmt = p.output_format.clone();
+        run!(music::mai_what(p), fmt.as_deref())
     }
 
-    #[tool(description = "Query player's rating level table completion (e.g. 13+, 14) and generate level progress grid image")]
-    async fn mai_level_progress(&self, Parameters(params): Parameters<MaiLevelProgressParams>) -> Result<CallToolResult, String> {
-        ProgressTools::level_progress(params).await
+    #[tool(description = "Today's maimai fortune: luck value, do/don't list and a recommended song (今日运势)")]
+    async fn mai_fortune(&self, Parameters(p): Parameters<music::FortuneParams>) -> Result<CallToolResult, String> {
+        let fmt = p.output_format.clone();
+        run!(music::fortune(p), fmt.as_deref())
     }
 
-    #[tool(description = "Query player's plate completion progress (舞, 霸者, 将, 极, 神, 舞舞) and generate plate table progress image")]
-    async fn mai_plate_table(&self, Parameters(params): Parameters<MaiPlateTableParams>) -> Result<CallToolResult, String> {
-        ProgressTools::plate_table(params).await
+    #[tool(description = "Level constant table image for lv7-15 without user data (13+定数表)")]
+    async fn mai_rating_table(
+        &self,
+        Parameters(p): Parameters<progress::RatingTableParams>,
+    ) -> Result<CallToolResult, String> {
+        run!(progress::rating_table(p), None)
     }
 
-    #[tool(description = "Bind user QQ to DivingFish username, LXNS token, default score source or theme")]
-    async fn mai_bind_player(&self, Parameters(params): Parameters<MaiBindPlayerParams>) -> Result<CallToolResult, String> {
-        UserTools::bind_player(params).await
+    #[tool(description = "User's completion table of a level, ranks or fc/ap/fs/fdx goal (13+完成表 / 14ap完成表)")]
+    async fn mai_level_table(
+        &self,
+        Parameters(p): Parameters<progress::LevelTableParams>,
+    ) -> Result<CallToolResult, String> {
+        let fmt = p.output_format.clone();
+        run!(progress::level_table(p), fmt.as_deref())
     }
 
-    #[tool(description = "View user settings, bound accounts, default score source and theme")]
-    async fn mai_user_settings(&self, Parameters(params): Parameters<MaiUserSettingsParams>) -> Result<CallToolResult, String> {
-        UserTools::user_settings(params).await
+    #[tool(
+        description = "Progress of a level towards a goal with completed / unfinished / unplayed lists (14 sss 进度 / 14ap未完成进度)"
+    )]
+    async fn mai_level_progress(
+        &self,
+        Parameters(p): Parameters<progress::LevelProgressParams>,
+    ) -> Result<CallToolResult, String> {
+        let fmt = p.output_format.clone();
+        run!(progress::level_progress(p), fmt.as_deref())
     }
 
-    #[tool(description = "Draw today's maimai fortune (运势值, 宜/忌, 幸运曲目) and generate daily fortune image card")]
-    async fn mai_fortune(&self, Parameters(params): Parameters<MaiFortuneParams>) -> Result<CallToolResult, String> {
-        FortuneTool::execute(params).await
+    #[tool(description = "User's scores of a level or constant sorted by achievement (13+分数列表 / 13.7分数列表)")]
+    async fn mai_level_score_list(
+        &self,
+        Parameters(p): Parameters<progress::ScoreListParams>,
+    ) -> Result<CallToolResult, String> {
+        let fmt = p.output_format.clone();
+        run!(progress::level_score_list(p), fmt.as_deref())
     }
 
-    #[tool(description = "Generate group leaderboard ranking of member DX ratings")]
-    async fn mai_group_rank(&self, Parameters(params): Parameters<MaiGroupRankParams>) -> Result<CallToolResult, String> {
-        GroupRankTool::execute(params).await
+    #[tool(
+        description = "Plate completion table (祝极完成表 / 霸者完成表 2); without version returns plate requirements (牌子条件)"
+    )]
+    async fn mai_plate_table(
+        &self,
+        Parameters(p): Parameters<progress::PlateParams>,
+    ) -> Result<CallToolResult, String> {
+        let fmt = p.output_format.clone();
+        run!(progress::plate_table(p), fmt.as_deref())
+    }
+
+    #[tool(description = "Unfinished charts of a plate per difficulty (舞将进度 / 彩神进度)")]
+    async fn mai_plate_progress(
+        &self,
+        Parameters(p): Parameters<progress::PlateParams>,
+    ) -> Result<CallToolResult, String> {
+        let fmt = p.output_format.clone();
+        run!(progress::plate_progress(p), fmt.as_deref())
+    }
+
+    #[tool(
+        description = "DivingFish OAuth binding (绑定水鱼): call without code for the link, then with the confirmation code"
+    )]
+    async fn mai_bind_divingfish(
+        &self,
+        Parameters(p): Parameters<user::BindDfParams>,
+    ) -> Result<CallToolResult, String> {
+        run!(user::bind_divingfish(p), None)
+    }
+
+    #[tool(
+        description = "LXNS OAuth binding (lxbind): call without code for the link, then with the authorization code"
+    )]
+    async fn mai_bind_lxns(&self, Parameters(p): Parameters<user::BindLxParams>) -> Result<CallToolResult, String> {
+        run!(user::bind_lxns(p), None)
+    }
+
+    #[tool(description = "View settings, switch score source (数据源) or theme (主题)")]
+    async fn mai_user_settings(
+        &self,
+        Parameters(p): Parameters<user::SettingsParams>,
+    ) -> Result<CallToolResult, String> {
+        run!(user::user_settings(p), None)
+    }
+
+    #[tool(
+        description = "DivingFish prober rating ranking, find a username, or the QQ user's own rank (查看排名 / 我的排名)"
+    )]
+    async fn mai_rating_ranking(
+        &self,
+        Parameters(p): Parameters<b50::RankingParams>,
+    ) -> Result<CallToolResult, String> {
+        let fmt = p.output_format.clone();
+        run!(b50::rating_ranking(p), fmt.as_deref())
+    }
+
+    #[tool(description = "Leaderboard of group members by DX Rating")]
+    async fn mai_group_rank(&self, Parameters(p): Parameters<b50::GroupRankParams>) -> Result<CallToolResult, String> {
+        run!(b50::group_rank(p), None)
+    }
+
+    #[tool(
+        description = "Refresh song / alias / plate data online and re-render tables (更新maimai数据 / 更新别名库 / 更新定数表)"
+    )]
+    async fn mai_update_data(&self, Parameters(p): Parameters<user::UpdateParams>) -> Result<CallToolResult, String> {
+        run!(user::update_data(p), None)
     }
 }
 
-
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .target(Target::Stderr)
-        .init();
-
-    log::info!("Starting maimai-mcp server (Rust)...");
-
-    let server = MaimaiMcpServer::new();
-    let service = server.serve((tokio::io::stdin(), tokio::io::stdout())).await?;
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).target(Target::Stderr).init();
+    log::info!("Starting maimai-mcp server");
+    update::spawn_scheduler();
+    let service = MaimaiMcpServer.serve((tokio::io::stdin(), tokio::io::stdout())).await?;
     service.waiting().await?;
-
     Ok(())
 }
